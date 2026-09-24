@@ -1,0 +1,84 @@
+param(
+    [switch]$ReplaceExisting
+)
+
+$ErrorActionPreference = 'Stop'
+$projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$releaseDir = Join-Path $projectRoot 'release'
+$outputExe = Join-Path $releaseDir 'ModelPort.exe'
+
+if ($env:CARGO_TARGET_DIR) {
+    if ([System.IO.Path]::IsPathRooted($env:CARGO_TARGET_DIR)) {
+        $targetDir = $env:CARGO_TARGET_DIR
+    } else {
+        $targetDir = Join-Path $projectRoot $env:CARGO_TARGET_DIR
+    }
+} else {
+    $targetDir = Join-Path $projectRoot 'src-tauri\target'
+}
+
+$builtExe = Join-Path $targetDir 'release\modelport.exe'
+
+if (-not (Test-Path -LiteralPath (Join-Path $projectRoot 'node_modules\.bin\tauri.cmd') -PathType Leaf)) {
+    throw '缺少项目依赖。请先在项目根目录运行 npm ci。'
+}
+
+Push-Location -LiteralPath $projectRoot
+try {
+    & npm.cmd run tauri build -- --no-bundle
+    if ($LASTEXITCODE -ne 0) {
+        throw "Tauri 构建失败，退出码：$LASTEXITCODE"
+    }
+} finally {
+    Pop-Location
+}
+
+if (-not (Test-Path -LiteralPath $builtExe -PathType Leaf)) {
+    throw "构建完成，但没有找到程序：$builtExe"
+}
+
+if (Test-Path -LiteralPath $outputExe -PathType Leaf) {
+    $builtHash = (Get-FileHash -LiteralPath $builtExe -Algorithm SHA256).Hash
+    $outputHash = (Get-FileHash -LiteralPath $outputExe -Algorithm SHA256).Hash
+    if ($builtHash -eq $outputHash) {
+        Write-Host "程序已是当前构建版本：$outputExe"
+        exit 0
+    }
+    if (-not $ReplaceExisting) {
+        throw "已存在不同版本：$outputExe。确认要更新后，重新运行脚本并添加 -ReplaceExisting；旧版会归档到 release\archive。"
+    }
+}
+
+New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+$stagingPath = Join-Path $releaseDir ('.ModelPort-' + [guid]::NewGuid().ToString('N') + '.exe')
+$backupPath = $null
+
+try {
+    Copy-Item -LiteralPath $builtExe -Destination $stagingPath -ErrorAction Stop
+
+    if (Test-Path -LiteralPath $outputExe -PathType Leaf) {
+        $archiveDir = Join-Path $releaseDir 'archive'
+        New-Item -ItemType Directory -Path $archiveDir -Force | Out-Null
+        $backupName = 'ModelPort-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.exe'
+        $backupPath = Join-Path $archiveDir $backupName
+        Move-Item -LiteralPath $outputExe -Destination $backupPath -ErrorAction Stop
+    }
+
+    try {
+        Move-Item -LiteralPath $stagingPath -Destination $outputExe -ErrorAction Stop
+    } catch {
+        if ($backupPath -and -not (Test-Path -LiteralPath $outputExe)) {
+            Move-Item -LiteralPath $backupPath -Destination $outputExe -ErrorAction Stop
+        }
+        throw
+    }
+} finally {
+    if (Test-Path -LiteralPath $stagingPath) {
+        Remove-Item -LiteralPath $stagingPath -Force
+    }
+}
+
+Write-Host "已生成：$outputExe"
+if ($backupPath) {
+    Write-Host "旧版已归档：$backupPath"
+}
