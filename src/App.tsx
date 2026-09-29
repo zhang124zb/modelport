@@ -406,18 +406,25 @@ function App() {
         <button aria-label="关闭窗口" className="close-button" onClick={() => void runWindowAction("close")} type="button"><Icon name="close" size={18} /></button>
       </div>
 
+      <header className="brand-row" data-tauri-drag-region onMouseDown={beginWindowDrag}>
+        <div className="brand-lockup">
+          <div className="brand-mark"><span /><span /></div>
+          <strong>ModelPort</strong>
+        </div>
+        <div className="brand-actions">
+          <button aria-label="搜索会话" className="icon-button" disabled title="搜索功能正在开发" type="button"><Icon name="search" /></button>
+          <button aria-label="会话归档" className="icon-button" disabled title="归档功能正在开发" type="button"><Icon name="archive" /></button>
+          <button
+            aria-label={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}
+            className="icon-button"
+            onClick={() => setSidebarOpen((open) => !open)}
+            title={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}
+            type="button"
+          ><Icon name="panel" /></button>
+        </div>
+      </header>
+
       <aside className="sidebar">
-        <header className="brand-row" data-tauri-drag-region onMouseDown={beginWindowDrag}>
-          <div className="brand-lockup">
-            <div className="brand-mark"><span /><span /></div>
-            <strong>ModelPort</strong>
-          </div>
-          <div className="brand-actions">
-            <button aria-label="搜索会话" className="icon-button" disabled title="搜索功能正在开发" type="button"><Icon name="search" /></button>
-            <button aria-label="会话归档" className="icon-button" disabled title="归档功能正在开发" type="button"><Icon name="archive" /></button>
-            <button aria-label="收起侧边栏" className="icon-button" onClick={() => setSidebarOpen(false)} type="button"><Icon name="panel" /></button>
-          </div>
-        </header>
 
         <div className="sidebar-scroll">
           <section className="conversation-section">
@@ -446,16 +453,13 @@ function App() {
             <button disabled title="资料库正在开发" type="button"><Icon name="library" /><span>我的资料</span></button>
             <button onClick={() => setConnectionCenterOpen(true)} type="button"><Icon name="settings" /><span>模型连接</span>{!configuredKeys.openai && !configuredKeys.deepseek && <span className="status-dot" />}</button>
             <button disabled title="帮助中心正在开发" type="button"><Icon name="help" /><span>帮助</span></button>
-            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.2.3）</span></button>
+            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.2.4）</span></button>
           </nav>
         </footer>
       </aside>
 
       <main className="workspace">
         <div className="workspace-topbar" data-tauri-drag-region onMouseDown={beginWindowDrag}>
-          {!sidebarOpen && (
-            <button aria-label="展开侧边栏" className="restore-sidebar icon-button" onClick={() => setSidebarOpen(true)} type="button"><Icon name="panel" /></button>
-          )}
           {activeConversation && (
             <button
               aria-label="关闭当前对话"

@@ -10,7 +10,7 @@
   --border: #dce2e8;
   --muted: #8b949e;
   --sidebar-width: 326px;
-  --titlebar-height: 40px;
+  --titlebar-height: 58px;
 }
 
 * { box-sizing: border-box; }
@@ -95,11 +95,19 @@ textarea:focus-visible {
 }
 
 .brand-row {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 68px;
+  width: var(--sidebar-width);
+  height: var(--titlebar-height);
   padding: 0 18px 0 23px;
+  background: #f3f4f6;
+  -webkit-user-select: none;
+  user-select: none;
   -webkit-app-region: drag;
 }
 
@@ -326,7 +334,6 @@ textarea:focus-visible {
 }
 
 .workspace-topbar button { -webkit-app-region: no-drag; }
-.restore-sidebar { position: absolute; left: 13px; top: 12px; }
 .window-actions {
   position: fixed;
   z-index: 50;
@@ -796,7 +803,6 @@ textarea:focus-visible {
 }
 
 @media (max-height: 760px) {
-  .brand-row { height: 58px; }
   .conversation-item { min-height: 43px; }
   .conversation-section + .conversation-section { margin-top: 14px; }
   .utility-nav button { height: 40px; }
@@ -824,7 +830,6 @@ textarea:focus-visible {
   }
   .app-shell.sidebar-collapsed .sidebar { box-shadow: none; }
   .workspace { height: 100%; margin: 0; border: 0; border-radius: 0; }
-  .restore-sidebar { display: grid; }
   .composer-area { width: calc(100% - 20px); }
   .composer { padding: 15px; border-radius: 19px; }
   .composer-tools .mode-button span { display: none; }
