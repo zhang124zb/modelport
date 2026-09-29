@@ -2298,8 +2298,9 @@ dependencies = [
 
 [[package]]
 name = "modelport"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
+ "futures-util",
  "keyring",
  "reqwest 0.12.28",
  "serde",
@@ -2307,6 +2308,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "tokio",
 ]
 
 [[package]]

@@ -436,6 +436,13 @@ textarea:focus-visible {
 .typing span:nth-child(2) { animation-delay: 120ms; }
 .typing span:nth-child(3) { animation-delay: 240ms; }
 
+.stream-note {
+  display: block;
+  margin-top: 6px;
+  color: #87929d;
+  font-size: 12px;
+}
+
 @keyframes bounce {
   0%, 60%, 100% { transform: translateY(0); }
   30% { transform: translateY(-5px); }
@@ -450,6 +457,10 @@ textarea:focus-visible {
 }
 
 .chat-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin: 0 0 9px;
   padding: 9px 13px;
   border: 1px solid #f4c7c4;
@@ -458,6 +469,22 @@ textarea:focus-visible {
   background: #fff4f2;
   font-size: 13px;
 }
+
+.chat-error > span { min-width: 0; overflow-wrap: anywhere; }
+
+.chat-error button {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid #edb9b2;
+  border-radius: 7px;
+  color: #9a3e37;
+  background: #fff;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.chat-error button:hover { background: #ffe9e6; }
 
 .composer {
   min-height: 163px;
@@ -553,6 +580,7 @@ textarea:focus-visible {
 
 .send-button:hover:not(:disabled) { background: #0877e5; transform: translateY(-1px); }
 .send-button:disabled { color: white; background: #dfe4e9; cursor: default; }
+.stop-symbol { width: 12px; height: 12px; border-radius: 2px; background: currentColor; }
 
 .model-menu {
   position: absolute;

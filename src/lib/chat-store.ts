@@ -1,6 +1,7 @@
 import type { ChatTurn, ModelOption, ProviderId } from "@/lib/modelport";
 
-export type Message = ChatTurn & { id: string };
+export type MessageStatus = "streaming" | "stopped" | "failed" | "interrupted";
+export type Message = ChatTurn & { id: string; status?: MessageStatus };
 export type Conversation = {
   id: string;
   title: string;
@@ -47,6 +48,15 @@ function isConversation(value: unknown): value is Conversation {
     && value.messages.every(isMessage);
 }
 
+function normalizeMessage(message: Message): Message {
+  const normalized: Message = { id: message.id, role: message.role, content: message.content };
+  if (message.status === "streaming") normalized.status = "interrupted";
+  else if (message.status === "stopped" || message.status === "failed" || message.status === "interrupted") {
+    normalized.status = message.status;
+  }
+  return normalized;
+}
+
 export function loadChatState(): ChatState {
   try {
     const stored = window.localStorage.getItem(storageKey);
@@ -55,7 +65,10 @@ export function loadChatState(): ChatState {
     if (!isRecord(parsed) || !Array.isArray(parsed.conversations)) {
       return { conversations: [], activeConversationId: null };
     }
-    const conversations = parsed.conversations.filter(isConversation);
+    const conversations = parsed.conversations.filter(isConversation).map((conversation) => ({
+      ...conversation,
+      messages: conversation.messages.map(normalizeMessage),
+    }));
     const activeConversationId = typeof parsed.activeConversationId === "string"
       && conversations.some((conversation) => conversation.id === parsed.activeConversationId)
       ? parsed.activeConversationId
