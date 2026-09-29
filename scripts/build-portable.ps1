@@ -25,6 +25,14 @@ if (-not (Test-Path -LiteralPath (Join-Path $projectRoot 'node_modules\.bin\taur
 
 Push-Location -LiteralPath $projectRoot
 try {
+    # Tauri's release build and a later plain Cargo build share the same output
+    # filename. Clear only this package's release artifacts so Cargo cannot reuse
+    # an executable that was compiled without Tauri's embedded frontend assets.
+    & cargo clean --manifest-path (Join-Path $projectRoot 'src-tauri\Cargo.toml') --package modelport --release
+    if ($LASTEXITCODE -ne 0) {
+        throw "清理 ModelPort 发布产物失败，退出码：$LASTEXITCODE"
+    }
+
     & npm.cmd run tauri build -- --no-bundle
     if ($LASTEXITCODE -ne 0) {
         throw "Tauri 构建失败，退出码：$LASTEXITCODE"
