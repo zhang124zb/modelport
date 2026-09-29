@@ -10,6 +10,7 @@
   --border: #dce2e8;
   --muted: #8b949e;
   --sidebar-width: 326px;
+  --titlebar-height: 40px;
 }
 
 * { box-sizing: border-box; }
@@ -39,6 +40,7 @@ textarea:focus-visible {
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   width: 100%;
   height: 100%;
+  padding-top: var(--titlebar-height);
   background: #f3f4f6;
   transition: grid-template-columns 180ms ease;
 }
@@ -82,7 +84,7 @@ textarea:focus-visible {
   top: 0;
   right: 138px;
   left: 0;
-  height: 12px;
+  height: var(--titlebar-height);
   -webkit-app-region: drag;
 }
 
@@ -338,7 +340,7 @@ textarea:focus-visible {
   display: grid;
   place-items: center;
   width: 46px;
-  height: 40px;
+  height: var(--titlebar-height);
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -815,7 +817,7 @@ textarea:focus-visible {
   .app-shell { grid-template-columns: 0 minmax(0, 1fr); }
   .sidebar {
     position: fixed;
-    inset: 0 auto 0 0;
+    inset: var(--titlebar-height) auto 0 0;
     width: min(326px, 88vw);
     min-width: 0;
     box-shadow: 18px 0 50px rgba(23, 29, 35, 0.14);

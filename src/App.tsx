@@ -446,7 +446,7 @@ function App() {
             <button disabled title="资料库正在开发" type="button"><Icon name="library" /><span>我的资料</span></button>
             <button onClick={() => setConnectionCenterOpen(true)} type="button"><Icon name="settings" /><span>模型连接</span>{!configuredKeys.openai && !configuredKeys.deepseek && <span className="status-dot" />}</button>
             <button disabled title="帮助中心正在开发" type="button"><Icon name="help" /><span>帮助</span></button>
-            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.2.2）</span></button>
+            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.2.3）</span></button>
           </nav>
         </footer>
       </aside>
