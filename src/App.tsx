@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import type { FormEvent, MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ConnectionModal } from "@/components/ConnectionModal";
 import { Icon } from "@/components/Icon";
@@ -158,6 +158,11 @@ function App() {
     if (action === "close") await appWindow.close();
   };
 
+  const beginWindowDrag = (event: ReactMouseEvent<HTMLElement>) => {
+    if (!isDesktop || event.button !== 0 || (event.target as HTMLElement).closest("button")) return;
+    void getCurrentWindow().startDragging();
+  };
+
   const selectConversation = (id: string) => {
     const conversation = conversations.find((item) => item.id === id);
     if (conversation) setSelectedModel(conversation.model);
@@ -165,15 +170,6 @@ function App() {
     setActiveConversationId(id);
     setChatError("");
     setMode("chat");
-  };
-
-  const deleteConversation = () => {
-    if (!activeConversationId || replyingId === activeConversationId) return;
-    if (!window.confirm("确定删除当前对话？删除后无法恢复。")) return;
-    setConversations((current) => current.filter((conversation) => conversation.id !== activeConversationId));
-    setActiveConversationId(null);
-    setDraft("");
-    setChatError("");
   };
 
   const startNewChat = () => {
@@ -398,8 +394,20 @@ function App() {
 
   return (
     <div className={`app-shell${sidebarOpen ? "" : " sidebar-collapsed"}`}>
+      <div
+        aria-hidden="true"
+        className="window-drag-strip"
+        data-tauri-drag-region
+        onMouseDown={beginWindowDrag}
+      />
+      <div aria-label="窗口控制" className="window-actions" role="toolbar">
+        <button aria-label="最小化窗口" onClick={() => void runWindowAction("minimize")} type="button"><Icon name="minimize" size={18} /></button>
+        <button aria-label="最大化或还原窗口" onClick={() => void runWindowAction("maximize")} type="button"><Icon name="maximize" size={17} /></button>
+        <button aria-label="关闭窗口" className="close-button" onClick={() => void runWindowAction("close")} type="button"><Icon name="close" size={18} /></button>
+      </div>
+
       <aside className="sidebar">
-        <header className="brand-row">
+        <header className="brand-row" data-tauri-drag-region onMouseDown={beginWindowDrag}>
           <div className="brand-lockup">
             <div className="brand-mark"><span /><span /></div>
             <strong>ModelPort</strong>
@@ -438,21 +446,26 @@ function App() {
             <button disabled title="资料库正在开发" type="button"><Icon name="library" /><span>我的资料</span></button>
             <button onClick={() => setConnectionCenterOpen(true)} type="button"><Icon name="settings" /><span>模型连接</span>{!configuredKeys.openai && !configuredKeys.deepseek && <span className="status-dot" />}</button>
             <button disabled title="帮助中心正在开发" type="button"><Icon name="help" /><span>帮助</span></button>
-            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.2.1）</span></button>
+            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.2.2）</span></button>
           </nav>
         </footer>
       </aside>
 
       <main className="workspace">
-        <div className="workspace-topbar" data-tauri-drag-region>
+        <div className="workspace-topbar" data-tauri-drag-region onMouseDown={beginWindowDrag}>
           {!sidebarOpen && (
             <button aria-label="展开侧边栏" className="restore-sidebar icon-button" onClick={() => setSidebarOpen(true)} type="button"><Icon name="panel" /></button>
           )}
-          <div className="window-actions">
-            <button aria-label="最小化" onClick={() => void runWindowAction("minimize")} type="button"><Icon name="minimize" size={20} /></button>
-            <button aria-label="最大化" onClick={() => void runWindowAction("maximize")} type="button"><Icon name="maximize" size={19} /></button>
-            <button aria-label="关闭" className="close-button" onClick={() => void runWindowAction("close")} type="button"><Icon name="close" size={20} /></button>
-          </div>
+          {activeConversation && (
+            <button
+              aria-label="关闭当前对话"
+              className="conversation-close-button"
+              disabled={replyingId === activeConversationId}
+              onClick={startNewChat}
+              title="关闭当前对话"
+              type="button"
+            ><Icon name="close" size={17} /></button>
+          )}
         </div>
 
         <section
@@ -473,7 +486,6 @@ function App() {
             <div className="message-stream">
               <div className="chat-heading">
                 <span>{activeConversation?.title ?? "新对话"}</span>
-                <button disabled={replyingId === activeConversationId} onClick={deleteConversation} type="button">删除对话</button>
               </div>
               {messages.map((message) => (
                 <article className={`message ${message.role}`} key={message.id}>

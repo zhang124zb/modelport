@@ -1,6 +1,6 @@
 [package]
 name = "modelport"
-version = "0.2.1"
+version = "0.2.2"
 description = "A local-first multi-model AI desktop client"
 authors = ["ModelPort contributors"]
 edition = "2024"

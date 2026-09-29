@@ -34,6 +34,7 @@ textarea:focus-visible {
 }
 
 .app-shell {
+  position: relative;
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   width: 100%;
@@ -70,7 +71,19 @@ textarea:focus-visible {
   height: 100%;
   overflow: hidden;
   background: #f5f5f5;
+  -webkit-user-select: none;
+  user-select: none;
   transition: opacity 150ms ease, transform 180ms ease;
+}
+
+.window-drag-strip {
+  position: fixed;
+  z-index: 40;
+  top: 0;
+  right: 138px;
+  left: 0;
+  height: 12px;
+  -webkit-app-region: drag;
 }
 
 .sidebar-collapsed .sidebar {
@@ -312,16 +325,23 @@ textarea:focus-visible {
 
 .workspace-topbar button { -webkit-app-region: no-drag; }
 .restore-sidebar { position: absolute; left: 13px; top: 12px; }
-.window-actions { display: flex; }
+.window-actions {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  right: 0;
+  display: flex;
+  -webkit-app-region: no-drag;
+}
 
 .window-actions button {
   display: grid;
   place-items: center;
-  width: 50px;
-  height: 39px;
+  width: 46px;
+  height: 40px;
   padding: 0;
   border: 0;
-  border-radius: 10px;
+  border-radius: 0;
   color: #343a40;
   background: transparent;
   cursor: pointer;
@@ -329,6 +349,23 @@ textarea:focus-visible {
 
 .window-actions button:hover { background: #f0f1f2; }
 .window-actions .close-button:hover { color: white; background: #e5484d; }
+
+.conversation-close-button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  color: #a4abb2;
+  background: transparent;
+  cursor: pointer;
+  transition: color 140ms ease, background 140ms ease;
+}
+
+.conversation-close-button:hover:not(:disabled) { color: #747d86; background: #f0f2f4; }
+.conversation-close-button:disabled { opacity: 0.42; cursor: not-allowed; }
 
 .conversation-canvas {
   position: relative;
@@ -371,22 +408,6 @@ textarea:focus-visible {
   font-weight: 650;
   text-align: center;
 }
-
-.chat-heading button {
-  position: absolute;
-  right: 0;
-  top: -5px;
-  border: 0;
-  padding: 5px 8px;
-  background: transparent;
-  color: #8b949e;
-  font: inherit;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.chat-heading button:hover { color: #d75c5c; }
-.chat-heading button:disabled { opacity: .45; cursor: not-allowed; }
 
 .message { display: flex; gap: 12px; margin-bottom: 25px; }
 .message.user { justify-content: flex-end; }
