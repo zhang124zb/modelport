@@ -35,6 +35,7 @@ export const providerDetails: Record<ProviderId, {
 };
 
 export const defaultModels: ModelOption[] = [
+  { id: "", name: "Ollama（选择本地模型）", provider: "ollama", tone: "#111827", label: "Q" },
   { id: "deepseek-flash", name: "DeepSeek Flash", provider: "deepseek", tone: "#5368ff", label: "D" },
   { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", provider: "deepseek", tone: "#5368ff", label: "D" },
   { id: "gpt-4.1", name: "GPT-4.1", provider: "openai", tone: "#17211b", label: "O" },

@@ -55,7 +55,7 @@ function App() {
   });
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [connectionCenterOpen, setConnectionCenterOpen] = useState(false);
-  const [selectedProvider, setSelectedProvider] = useState<ProviderId>("deepseek");
+  const [selectedProvider, setSelectedProvider] = useState<ProviderId>("ollama");
   const [configuredKeys, setConfiguredKeys] = useState<Record<"openai" | "deepseek", boolean>>({ openai: false, deepseek: false });
   const [keyDraft, setKeyDraft] = useState("");
   const [connectionBusy, setConnectionBusy] = useState(false);
@@ -102,6 +102,19 @@ function App() {
       modelport.hasKey("deepseek"),
     ]).then(([openai, deepseek]) => setConfiguredKeys({ openai, deepseek }))
       .catch(() => setChatError("无法读取系统安全凭据库，请检查桌面应用权限。"));
+  }, []);
+
+  useEffect(() => {
+    if (!isDesktop) return;
+    let cancelled = false;
+    void modelport.listModels("ollama").then((ids) => {
+      if (cancelled) return;
+      const discovered = ids.slice(0, 100).map((id) => modelOption("ollama", id));
+      if (!discovered.length) return;
+      setModelChoices((current) => [...discovered, ...current.filter((model) => model.provider !== "ollama")]);
+      setSelectedModel((current) => current.provider === "ollama" && !current.id ? discovered[0] : current);
+    }).catch(() => { /* Keep the local-model choice available when Ollama is offline. */ });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -175,6 +188,7 @@ function App() {
   const startNewChat = () => {
     followBottomRef.current = true;
     setActiveConversationId(null);
+    setSelectedModel(modelChoices.find((model) => model.provider === "ollama" && model.id) ?? defaultModels[0]);
     setDraft("");
     setChatError("");
     setMode("chat");
@@ -259,6 +273,12 @@ function App() {
     if (!content || activeRequestRef.current || mode === "image") return;
     if (!isDesktop) {
       setChatError("真实模型请求仅能在 ModelPort 桌面应用中使用。");
+      return;
+    }
+    if (selectedModel.provider === "ollama" && !selectedModel.id) {
+      setSelectedProvider("ollama");
+      setConnectionCenterOpen(true);
+      setChatError("请启动本机 Ollama 并安装模型，然后在模型连接中获取模型列表。");
       return;
     }
     if (selectedModel.provider !== "ollama" && !configuredKeys[selectedModel.provider]) {
@@ -453,7 +473,7 @@ function App() {
             <button disabled title="资料库正在开发" type="button"><Icon name="library" /><span>我的资料</span></button>
             <button onClick={() => setConnectionCenterOpen(true)} type="button"><Icon name="settings" /><span>模型连接</span>{!configuredKeys.openai && !configuredKeys.deepseek && <span className="status-dot" />}</button>
             <button disabled title="帮助中心正在开发" type="button"><Icon name="help" /><span>帮助</span></button>
-            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.2.4）</span></button>
+            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.2.5）</span></button>
           </nav>
         </footer>
       </aside>

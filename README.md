@@ -15,6 +15,7 @@ ModelPort（模型港）是一款本地优先的多模型 AI 桌面客户端。�
 - 逐段显示模型回复，并可在回复过程中停止生成；停止后保留已收到的内容
 - 请求失败时保留已发送的用户问题并显示错误；未收到回复时可点“编辑并重试”修改后再发送
 - 模型连接测试和可用模型发现
+- 空白新对话默认连接本机 Ollama，并在启动时自动读取已安装模型；打开历史对话时沿用该对话的模型
 - Windows 安全凭据库中的云端 API Key 保存与删除
 - AI 回复的 Markdown 渲染
 - 自定义桌面标题栏、窗口拖动和窗口控制
@@ -62,6 +63,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-portable.ps1
 ```
 
 脚本会先把旧程序移入 `release/archive/`，再放入新程序；若新旧文件相同，则直接结束。
+
+## 桌面回归检查
+
+本机 Ollama 已运行并安装模型时，可用 Node.js 24 和独立 WebView 数据目录检查默认模型、弹窗遮罩、新建对话和历史模型恢复：
+
+```powershell
+$env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:TEMP ('modelport-check-' + [guid]::NewGuid().ToString('N'))
+$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9342 --remote-allow-origins=*'
+Start-Process -FilePath "$PWD\release\ModelPort.exe"
+Remove-Item Env:WEBVIEW2_USER_DATA_FOLDER, Env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
+node scripts/verify-desktop.mjs 9342
+```
+
+检查脚本只允许空白的测试数据目录，不会在含真实历史记录的窗口中运行。完成后关闭测试窗口，双击正常启动文件即可。
 
 ## 后续更新
 
