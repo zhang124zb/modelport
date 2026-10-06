@@ -2,7 +2,9 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { FormEvent, MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ConnectionModal } from "@/components/ConnectionModal";
+import type { ProviderSettingsProps } from "@/components/ConnectionModal";
 import { Icon } from "@/components/Icon";
+import { SettingsDialog } from "@/features/settings/SettingsDialog";
 import {
   defaultModels,
   errorMessage,
@@ -55,6 +57,7 @@ function App() {
   });
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [connectionCenterOpen, setConnectionCenterOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<ProviderId>("ollama");
   const [configuredKeys, setConfiguredKeys] = useState<Record<"openai" | "deepseek", boolean>>({ openai: false, deepseek: false });
   const [keyDraft, setKeyDraft] = useState("");
@@ -206,6 +209,18 @@ function App() {
     setKeyDraft("");
     setConnectionNotice("");
     setConnectionCenterOpen(false);
+  };
+
+  const openSettings = () => {
+    closeConnectionCenter();
+    setModelMenuOpen(false);
+    setSettingsOpen(true);
+  };
+
+  const closeSettings = () => {
+    setKeyDraft("");
+    setConnectionNotice("");
+    setSettingsOpen(false);
   };
 
   const saveConnection = async () => {
@@ -412,6 +427,23 @@ function App() {
     );
   };
 
+  const providerSettingsProps: ProviderSettingsProps = {
+    busy: connectionBusy,
+    configuredKeys,
+    keyDraft,
+    notice: connectionNotice,
+    onKeyDraftChange: setKeyDraft,
+    onRemove: () => void removeConnection(),
+    onSave: () => void saveConnection(),
+    onSelectProvider: (providerId) => {
+      setSelectedProvider(providerId);
+      setKeyDraft("");
+      setConnectionNotice("");
+    },
+    onTest: () => void testConnection(),
+    selectedProvider,
+  };
+
   return (
     <div className={`app-shell${sidebarOpen ? "" : " sidebar-collapsed"}`}>
       <div
@@ -471,9 +503,10 @@ function App() {
           </div>
           <nav aria-label="应用菜单" className="utility-nav">
             <button disabled title="资料库正在开发" type="button"><Icon name="library" /><span>我的资料</span></button>
-            <button onClick={() => setConnectionCenterOpen(true)} type="button"><Icon name="settings" /><span>模型连接</span>{!configuredKeys.openai && !configuredKeys.deepseek && <span className="status-dot" />}</button>
+            <button aria-label="设置" onClick={openSettings} type="button"><Icon name="settings" /><span>设置</span></button>
+            <button onClick={() => setConnectionCenterOpen(true)} type="button"><Icon name="providers" /><span>模型连接</span>{!configuredKeys.openai && !configuredKeys.deepseek && <span className="status-dot" />}</button>
             <button disabled title="帮助中心正在开发" type="button"><Icon name="help" /><span>帮助</span></button>
-            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.2.5）</span></button>
+            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.2.6）</span></button>
           </nav>
         </footer>
       </aside>
@@ -597,22 +630,14 @@ function App() {
       </main>
 
       {connectionCenterOpen && (
-        <ConnectionModal
-          busy={connectionBusy}
-          configuredKeys={configuredKeys}
-          keyDraft={keyDraft}
-          notice={connectionNotice}
-          onClose={closeConnectionCenter}
-          onKeyDraftChange={setKeyDraft}
-          onRemove={() => void removeConnection()}
-          onSave={() => void saveConnection()}
-          onSelectProvider={(providerId) => {
-            setSelectedProvider(providerId);
-            setKeyDraft("");
-            setConnectionNotice("");
-          }}
-          onTest={() => void testConnection()}
-          selectedProvider={selectedProvider}
+        <ConnectionModal {...providerSettingsProps} onClose={closeConnectionCenter} />
+      )}
+      {settingsOpen && (
+        <SettingsDialog
+          currentModel={selectedModel}
+          modelChoices={modelChoices}
+          onClose={closeSettings}
+          providerProps={providerSettingsProps}
         />
       )}
     </div>

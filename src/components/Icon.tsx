@@ -1,29 +1,43 @@
 import type { ReactNode } from "react";
 
-type IconName =
+export type IconName =
   | "archive"
   | "brain"
+  | "book"
   | "chat"
   | "chevron"
   | "close"
+  | "cube"
+  | "document"
   | "file"
+  | "globe"
   | "help"
   | "image"
   | "info"
   | "library"
   | "maximize"
+  | "mcp"
   | "minimize"
   | "panel"
   | "pin"
   | "plus"
+  | "providers"
   | "robot"
   | "search"
   | "send"
   | "settings"
   | "sliders"
-  | "spark";
+  | "spark"
+  | "wand";
 
 const iconShapes: Record<IconName, ReactNode> = {
+  book: <><path d="M12 5v15M12 5C8 2 3 4 3 4v15s5-2 9 1c4-3 9-1 9-1V4s-5-2-9 1Z"/></>,
+  cube: <><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 5v10l9 5 9-5V8M12 13v10"/></>,
+  document: <><path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 16h6"/></>,
+  globe: <><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c-5 5-5 13 0 18 5-5 5-13 0-18ZM5 7h14M5 17h14"/></>,
+  mcp: <><circle cx="12" cy="12" r="9" strokeDasharray="1 4"/><path d="M8 16V8l4 5 4-5v8"/></>,
+  providers: <><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/></>,
+  wand: <><path d="m5 19 11-11 3 3L8 22 5 19ZM14 10l3 3M5 3v6M2 6h6M18 2v4M16 4h4"/></>,
   archive: <><path d="M4 7.5h16"/><path d="M6 7.5V20h12V7.5"/><path d="M5 4h14l1 3.5H4L5 4Z"/><path d="M9.5 12h5"/></>,
   brain: <><path d="M9.5 4.5A3.5 3.5 0 0 0 6 8v.4A3.5 3.5 0 0 0 5.5 15v.5A3.5 3.5 0 0 0 9 19h.5"/><path d="M14.5 4.5A3.5 3.5 0 0 1 18 8v.4a3.5 3.5 0 0 1 .5 6.6v.5A3.5 3.5 0 0 1 15 19h-.5"/><path d="M9.5 4.5v15M14.5 4.5v15M6 9.5h3.5m5 5H18"/></>,
   chat: <path d="M21 11.5a8.5 8.5 0 0 1-9 8.5 9.8 9.8 0 0 1-4-.9L3 21l1.7-4.7A8.4 8.4 0 0 1 3 11.5a8.5 8.5 0 0 1 9-8.5 8.5 8.5 0 0 1 9 8.5Z"/>,

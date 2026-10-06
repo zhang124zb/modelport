@@ -20,6 +20,7 @@ ModelPort（模型港）是一款本地优先的多模型 AI 桌面客户端。�
 - AI 回复的 Markdown 渲染
 - 自定义桌面标题栏、窗口拖动和窗口控制
 - 不同窗口尺寸下的响应式布局
+- 两栏设置中心：ModelPort账户、模型提供方、默认模型、联网搜索、MCP、知识库、Skills、智能体、文档解析器和对话设置；后续功能带独立开发入口
 
 当前只支持固定的 OpenAI、DeepSeek 官方 API 地址和本机 Ollama（`127.0.0.1:11434`）。Anthropic、图像生成、附件、重新生成和自动重试尚未接入；界面会明确标识尚不可用的入口。会话保存在本机 WebView 数据中，重启后保留；停止或中断的部分回复会保留标记，不作为下一次请求的完整助手回复。聊天内容未加密，API Key 仍单独保存在 Windows 安全凭据库。
 
@@ -97,4 +98,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-portable.ps1
 - 模型中立：同一个对话界面可以切换云端模型和本地模型。
 - 安全默认：API Key 进入 Windows 安全凭据库，不写入普通配置文件或聊天记录。
 
-源码模块和 Git 更新流程见 [项目结构文档](./docs/ARCHITECTURE.md)；功能范围与后续计划见 [产品设计文档](./docs/PRODUCT_DESIGN.md)。
+源码模块和 Git 更新流程见 [项目结构文档](./docs/ARCHITECTURE.md)；设置扩展接口见 [设置模块开发文档](./docs/SETTINGS.md)；功能范围与后续计划见 [产品设计文档](./docs/PRODUCT_DESIGN.md)。

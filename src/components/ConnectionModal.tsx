@@ -2,13 +2,12 @@ import type { ProviderId } from "@/lib/modelport";
 import { providerDetails } from "@/lib/modelport";
 import { Icon } from "@/components/Icon";
 
-type ConnectionModalProps = {
+export type ProviderSettingsProps = {
   selectedProvider: ProviderId;
   configuredKeys: Record<"openai" | "deepseek", boolean>;
   keyDraft: string;
   busy: boolean;
   notice: string;
-  onClose: () => void;
   onSelectProvider: (provider: ProviderId) => void;
   onKeyDraftChange: (value: string) => void;
   onSave: () => void;
@@ -18,26 +17,20 @@ type ConnectionModalProps = {
 
 const providerIds: ProviderId[] = ["openai", "deepseek", "ollama"];
 
-export function ConnectionModal({
+export function ProviderSettings({
   selectedProvider,
   configuredKeys,
   keyDraft,
   busy,
   notice,
-  onClose,
   onSelectProvider,
   onKeyDraftChange,
   onSave,
   onTest,
   onRemove,
-}: ConnectionModalProps) {
+}: ProviderSettingsProps) {
   return (
-    <div className="modal-backdrop" onMouseDown={onClose} role="presentation">
-      <section aria-labelledby="connection-title" aria-modal="true" className="connection-modal" onMouseDown={(event) => event.stopPropagation()} role="dialog">
-        <header>
-          <div><span className="eyebrow">MODELPORT</span><h2 id="connection-title">模型连接</h2><p>连接云端 API 或本地模型服务。</p></div>
-          <button aria-label="关闭设置" className="icon-button" onClick={onClose} type="button"><Icon name="close" /></button>
-        </header>
+    <>
         <div className="provider-list">
           {providerIds.map((providerId) => {
             const provider = providerDetails[providerId];
@@ -69,6 +62,19 @@ export function ConnectionModal({
           {notice && <p className="connection-notice" role="status">{notice}</p>}
         </div>
         <div className="security-note"><Icon name="info" size={20} /><span>仅支持官方云端地址与本机 Ollama。Anthropic 等更多服务将在后续接入。</span></div>
+    </>
+  );
+}
+
+export function ConnectionModal({ onClose, ...providerProps }: ProviderSettingsProps & { onClose: () => void }) {
+  return (
+    <div className="modal-backdrop" onMouseDown={onClose} role="presentation">
+      <section aria-labelledby="connection-title" aria-modal="true" className="connection-modal" onMouseDown={(event) => event.stopPropagation()} role="dialog">
+        <header>
+          <div><span className="eyebrow">MODELPORT</span><h2 id="connection-title">模型连接</h2><p>连接云端 API 或本地模型服务。</p></div>
+          <button aria-label="关闭设置" className="icon-button" onClick={onClose} type="button"><Icon name="close" /></button>
+        </header>
+        <ProviderSettings {...providerProps} />
       </section>
     </div>
   );

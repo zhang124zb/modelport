@@ -4,6 +4,7 @@
 modelport/
 ├─ src/                 React 界面、聊天状态和桌面命令调用
 │  ├─ components/        可复用的界面组件
+│  ├─ features/settings/ 设置分类、页面接口与组件映射
 │  └─ lib/               模型连接封装与本地会话存储
 ├─ src-tauri/           Tauri 窗口、Rust 命令和 Windows 凭据访问
 │  └─ src/connection.rs 云端及本地模型请求
@@ -23,6 +24,7 @@ modelport/
 - 会话消息记录完成、停止、失败或意外中断状态；重启后仍能区分部分回复，构造下一次模型请求时跳过这些不完整助手回合。
 - `src/lib/chat-store.ts` 将对话保存在此应用的本机 WebView 数据中。聊天内容未加密，不写进 Git；API Key 不存入该数据。
 - `src/components/ai-elements/` 和 `src/components/ui/` 是界面组件代码，修改时与业务逻辑分开审查。
+- 设置模块通过固定分类 ID 与统一页面参数扩展，开发接口见 [设置模块开发文档](./SETTINGS.md)。模型提供方页面复用现有连接组件与回调。
 
 ## Git 中保存什么
 
