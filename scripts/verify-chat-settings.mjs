@@ -18,10 +18,10 @@ async function key(key, code, windowsVirtualKeyCode, modifiers = 0) {
 }
 async function fill(selector, text) { await evaluate(`{ const el = document.querySelector(${JSON.stringify(selector)}); el.focus(); el.select(); }`); await command("Input.insertText", { text }); }
 async function slider(id, position, code, virtualKey) { await evaluate(`document.getElementById('${id}').focus()`); await key(position, code, virtualKey); }
-async function openSettings() {
+async function openSettings(section = "对话设置") {
   await evaluate("document.querySelector('.utility-nav [aria-label=\"设置\"]').focus(); document.querySelector('.utility-nav [aria-label=\"设置\"]').click()");
-  await evaluate("[...document.querySelectorAll('.settings-nav button')].find(button => button.innerText === '对话设置').click()");
-  await waitFor("Boolean(document.querySelector('#chat-system-prompt'))");
+  await evaluate(`[...document.querySelectorAll('.settings-nav button')].find(button => button.innerText === ${JSON.stringify(section)}).click()`);
+  await waitFor(`document.querySelector('#settings-page-title').textContent === ${JSON.stringify(section)}`);
 }
 async function closeSettings() { await evaluate("document.querySelector('[aria-label=\"关闭设置\"]').click()"); await waitFor("!document.querySelector('.settings-dialog')"); }
 async function save() { await evaluate("document.querySelector('.chat-settings-save').click()"); await waitFor("document.querySelector('.chat-settings-notice')?.innerText.includes('对话设置已保存') && document.querySelector('.chat-settings-save').disabled"); }
@@ -44,12 +44,15 @@ try {
   originalPreferences = await stored(preferencesKey); originalChat = await stored(chatKey);
   assert.equal(originalPreferences, null, "Use a fresh isolated WebView profile");
   assert.equal(JSON.parse(originalChat ?? "{}").conversations?.length ?? 0, 0, "Never run on real chats"); verified = true;
+  await openSettings("键盘快捷键"); await select("chat-send-shortcut", "ctrl-enter");
+  await evaluate("document.querySelector('.keyboard-settings-save').click()"); await closeSettings();
+  const keyboardSaved = await stored(preferencesKey);
   await openSettings(); assert.ok(await evaluate("document.querySelector('.chat-settings-save').disabled"));
   assert.equal(await evaluate("document.querySelector('#chat-context-turns').value"), "20");
-  await select("chat-send-shortcut", "ctrl-enter"); await select("chat-reply-format", "plain");
+  assert.ok(await evaluate("!document.querySelector('#chat-send-shortcut')")); await select("chat-reply-format", "plain");
   await slider("chat-context-turns", "Home", "Home", 36); await slider("chat-font-size", "End", "End", 35);
   const prompt = "For every user request, reply ONLY with the exact text MODELPORT_CHAT_SETTINGS_VERIFIED. No other text.";
-  await fill("#chat-system-prompt", prompt); assert.equal(await stored(preferencesKey), null);
+  await fill("#chat-system-prompt", prompt); assert.equal(await stored(preferencesKey), keyboardSaved);
   acceptDialog = false;
   for (const action of ["[...document.querySelectorAll('.settings-nav button')].find(button => button.innerText === 'Skills').click()", "document.querySelector('[aria-label=\"关闭设置\"]').click()"] ) {
     const count = dialogs; await evaluate(action); assert.ok(dialogs > count); assert.ok(await evaluate("Boolean(document.querySelector('#chat-system-prompt'))"));
@@ -63,7 +66,7 @@ try {
   assert.ok(dialogs > nativeCloseCount && await evaluate("Boolean(document.querySelector('#chat-system-prompt'))"));
   acceptDialog = true; await save();
   const saved = JSON.parse(await stored(preferencesKey));
-  assert.deepEqual(saved, { sendShortcut: "ctrl-enter", contextTurns: 0, systemPrompt: prompt, renderMarkdown: false, fontSize: 24 });
+  assert.deepEqual(saved, { sendShortcut: "ctrl-enter", sendWithoutReplyShortcut: "none", contextTurns: 0, systemPrompt: prompt, renderMarkdown: false, fontSize: 24 });
   console.log("PASS: save-only application, navigation/Escape/native-close guards and bounded settings");
 
   await slider("chat-context-turns", "ArrowRight", "ArrowRight", 39);
@@ -98,9 +101,12 @@ try {
   console.log("PASS: Ctrl+Enter sends; zero history and global instructions reach actual Ollama generation");
 
   await openSettings(); await slider("chat-context-turns", "ArrowRight", "ArrowRight", 39);
-  await select("chat-send-shortcut", "enter"); await select("chat-reply-format", "markdown");
+  await select("chat-reply-format", "markdown");
   const updatedPrompt = "For every user request, ignore previous test replies and reply ONLY MODELPORT_CHAT_SETTINGS_UPDATED.";
   await fill("#chat-system-prompt", updatedPrompt); await save();
+  await evaluate("[...document.querySelectorAll('.settings-nav button')].find(button => button.innerText === '键盘快捷键').click()");
+  await select("chat-send-shortcut", "enter"); await evaluate("document.querySelector('.keyboard-settings-save').click()");
+  await evaluate("[...document.querySelectorAll('.settings-nav button')].find(button => button.innerText === '对话设置').click()");
   await command("Emulation.setDeviceMetricsOverride", { width: 920, height: 680, deviceScaleFactor: 1, mobile: false });
   assert.ok(await evaluate("['.settings-dialog', '.settings-content', '.chat-settings-page'].every(selector => { const el = document.querySelector(selector); return el.scrollWidth === el.clientWidth; })"));
   assert.ok(await evaluate("document.querySelector('.settings-content').scrollHeight > document.querySelector('.settings-content').clientHeight"));

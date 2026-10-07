@@ -25,6 +25,10 @@ export function SettingsDialog({ onClose, initialSectionId = "account", ...pageP
     return () => { dialog?.close(); opener?.focus(); };
   }, []);
 
+  useLayoutEffect(() => {
+    dialogRef.current?.querySelector('.settings-nav [aria-current="page"]')?.scrollIntoView({ block: "nearest" });
+  }, [activeSectionId]);
+
   return (
     <dialog
       aria-labelledby="settings-title"

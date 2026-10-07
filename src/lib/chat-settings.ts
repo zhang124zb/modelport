@@ -3,33 +3,37 @@ import type { Message } from "./chat-store";
 
 export type ChatSettings = {
   sendShortcut: "enter" | "ctrl-enter";
+  sendWithoutReplyShortcut: "ctrl-enter" | "alt-enter" | "none";
   contextTurns: number;
   systemPrompt: string;
   renderMarkdown: boolean;
   fontSize: number;
 };
 
-export const defaultChatSettings: ChatSettings = {
-  sendShortcut: "enter", contextTurns: 20, systemPrompt: "", renderMarkdown: true, fontSize: 15,
-};
+export const defaultDialogueSettings = { contextTurns: 20, systemPrompt: "", renderMarkdown: true, fontSize: 15 };
+export const defaultChatSettings: ChatSettings = { sendShortcut: "enter", sendWithoutReplyShortcut: "ctrl-enter", ...defaultDialogueSettings };
 const storageKey = "modelport.preferences.chat.v1";
 
 export function validateChatSettings(value: unknown): ChatSettings {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("对话设置格式无效。");
   const record = value as Record<string, unknown>;
   const sendShortcut = record.sendShortcut === undefined ? defaultChatSettings.sendShortcut : record.sendShortcut;
+  const sendWithoutReplyShortcut = record.sendWithoutReplyShortcut === undefined
+    ? (sendShortcut === "ctrl-enter" ? "none" : "ctrl-enter") : record.sendWithoutReplyShortcut;
   const contextTurns = record.contextTurns === undefined ? defaultChatSettings.contextTurns : record.contextTurns;
   const systemPrompt = record.systemPrompt === undefined ? defaultChatSettings.systemPrompt : record.systemPrompt;
   const renderMarkdown = record.renderMarkdown === undefined ? defaultChatSettings.renderMarkdown : record.renderMarkdown;
   const fontSize = record.fontSize === undefined ? defaultChatSettings.fontSize : record.fontSize;
   if ((sendShortcut !== "enter" && sendShortcut !== "ctrl-enter")
-    || typeof contextTurns !== "number" || !Number.isInteger(contextTurns) || contextTurns < 0 || contextTurns > 40
+    || !["ctrl-enter", "alt-enter", "none"].includes(sendWithoutReplyShortcut as string)
+    || sendShortcut === sendWithoutReplyShortcut) throw new Error("快捷键设置无效或发送组合重复，请检查两种发送方式。");
+  if (typeof contextTurns !== "number" || !Number.isInteger(contextTurns) || contextTurns < 0 || contextTurns > 40
     || typeof fontSize !== "number" || !Number.isInteger(fontSize) || fontSize < 12 || fontSize > 24
     || typeof renderMarkdown !== "boolean"
     || typeof systemPrompt !== "string" || systemPrompt.length > 4000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(systemPrompt)) {
     throw new Error("对话设置超出范围，请检查上下文轮数、字号与提示词（最多 4000 字符）。");
   }
-  return { sendShortcut, contextTurns, systemPrompt, renderMarkdown, fontSize };
+  return { sendShortcut, sendWithoutReplyShortcut: sendWithoutReplyShortcut as ChatSettings["sendWithoutReplyShortcut"], contextTurns, systemPrompt, renderMarkdown, fontSize };
 }
 
 export function loadChatSettings(): { settings: ChatSettings; error: string } {
@@ -54,14 +58,19 @@ export function shouldSendOnKey(event: Pick<KeyboardEvent, "key" | "keyCode" | "
   return shortcut === "ctrl-enter" ? event.ctrlKey || event.metaKey : !event.ctrlKey && !event.metaKey;
 }
 
-export function buildRequestHistory(messages: readonly Pick<Message, "role" | "content" | "status">[], question: string, contextTurns: number): ChatTurn[] {
+export function buildRequestHistory(messages: readonly Pick<Message, "role" | "content" | "status" | "savedOnly" | "topicStart">[], question: string, contextTurns: number): ChatTurn[] {
   const rounds: ChatTurn[][] = [];
   let pending: ChatTurn | undefined;
+  let notes: ChatTurn[] = [];
   for (const message of messages) {
+    if (message.role === "user" && message.topicStart) { rounds.length = 0; pending = undefined; notes = []; }
     if (message.status || !message.content.trim()) { pending = undefined; continue; }
     const turn: ChatTurn = { role: message.role, content: message.content };
-    if (message.role === "user") pending = turn;
-    else if (pending) { rounds.push([pending, turn]); pending = undefined; }
+    if (message.role === "user" && message.savedOnly) { notes.push(turn); pending = undefined; }
+    else if (message.role === "user") pending = turn;
+    else if (pending) { rounds.push([...notes, pending, turn]); notes = []; pending = undefined; }
   }
-  return [...(contextTurns > 0 ? rounds.slice(-contextTurns).flat() : []), { role: "user", content: question }];
+  const history = contextTurns > 0 ? [...rounds.slice(-contextTurns).flat(), ...notes].slice(-99) : [];
+  if (history[0]?.role === "assistant") history.shift();
+  return [...history, { role: "user", content: question }];
 }

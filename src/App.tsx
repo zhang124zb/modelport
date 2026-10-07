@@ -1,10 +1,11 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent, MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ConnectionModal } from "@/components/ConnectionModal";
 import type { ProviderSettingsProps } from "@/components/ConnectionModal";
 import { Icon } from "@/components/Icon";
 import { SettingsDialog } from "@/features/settings/SettingsDialog";
+import { ConversationSearchDialog } from "@/components/ConversationSearchDialog";
 import {
   defaultModels,
   errorMessage,
@@ -19,6 +20,7 @@ import type { SettingsSectionId } from "@/features/settings/sections";
 import { loadChatState, saveChatState } from "@/lib/chat-store";
 import type { Conversation, Message } from "@/lib/chat-store";
 import { buildRequestHistory, loadChatSettings, saveChatSettings, shouldSendOnKey } from "@/lib/chat-settings";
+import { adjacentConversationId, getAppShortcut, matchesSaveOnlyShortcut } from "@/lib/keyboard-shortcuts";
 import "./App.css";
 
 const MessageResponse = lazy(() =>
@@ -63,6 +65,7 @@ function App() {
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [connectionCenterOpen, setConnectionCenterOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("account");
   const [skills, setSkills] = useState<SkillSummary[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(isDesktop);
@@ -89,6 +92,7 @@ function App() {
   const activeRequestRef = useRef<ActiveRequest | null>(null);
   const canvasRef = useRef<HTMLElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const keyboardHandlerRef = useRef<(event: KeyboardEvent) => void>(() => {});
   const followBottomRef = useRef(true);
   const pendingSaveRef = useRef({ conversations, activeConversationId });
   const saveTimerRef = useRef<number | null>(null);
@@ -249,7 +253,8 @@ function App() {
 
   const selectConversation = (id: string) => {
     const conversation = conversations.find((item) => item.id === id);
-    if (conversation) setSelectedModel(conversation.model);
+    if (conversation) setSelectedModel(conversation.model.provider === "ollama" && !conversation.model.id
+      ? modelChoices.find(model => model.provider === "ollama" && model.id) ?? conversation.model : conversation.model);
     followBottomRef.current = true;
     setActiveConversationId(id);
     setChatError("");
@@ -257,6 +262,7 @@ function App() {
   };
 
   const startNewChat = () => {
+    if (draft.trim() && !window.confirm("输入框有未发送内容，确定放弃并创建新对话吗？")) return;
     followBottomRef.current = true;
     setActiveConversationId(null);
     setSelectedModel(modelChoices.find((model) => model.provider === "ollama" && model.id) ?? defaultModels[0]);
@@ -284,6 +290,7 @@ function App() {
   };
 
   const openSettings = (section: SettingsSectionId = "account") => {
+    setSearchOpen(false);
     closeConnectionCenter();
     setModelMenuOpen(false);
     setSettingsOpen(true);
@@ -357,7 +364,7 @@ function App() {
     }
   };
 
-  const sendMessage = async (event?: FormEvent) => {
+  const sendMessage = async (event?: FormEvent, generateReply = true) => {
     event?.preventDefault();
     const content = draft.trim();
     if (!content || activeRequestRef.current || mode === "image") return;
@@ -365,14 +372,14 @@ function App() {
       setChatError("真实模型请求仅能在 ModelPort 桌面应用中使用。");
       return;
     }
-    if (chatPreferences.error) { openSettings("chat"); return; }
-    if (selectedModel.provider === "ollama" && !selectedModel.id) {
+    if (generateReply && chatPreferences.error) { openSettings("chat"); return; }
+    if (generateReply && selectedModel.provider === "ollama" && !selectedModel.id) {
       setSelectedProvider("ollama");
       setConnectionCenterOpen(true);
       setChatError("请启动本机 Ollama 并安装模型，然后在模型连接中获取模型列表。");
       return;
     }
-    if (selectedModel.provider !== "ollama" && !configuredKeys[selectedModel.provider]) {
+    if (generateReply && selectedModel.provider !== "ollama" && !configuredKeys[selectedModel.provider]) {
       setSelectedProvider(selectedModel.provider);
       setConnectionCenterOpen(true);
       setChatError(`请先配置 ${providerDetails[selectedModel.provider].name} 的 API Key。`);
@@ -380,7 +387,7 @@ function App() {
     }
 
     let requestSkill = selectedSkill;
-    if (requestSkill) {
+    if (generateReply && requestSkill) {
       if (skillsLoading || skillsError) { setChatError(skillsError || "技能库正在读取，请稍后发送。"); return; }
       if (!currentSkill) { selectSkill(undefined); setChatError("技能已禁用或删除，已清除选择。请确认后重新发送。"); return; }
       if (skillChanged) {
@@ -391,7 +398,7 @@ function App() {
     }
 
     let requestKnowledge = selectedKnowledge;
-    if (requestKnowledge) {
+    if (generateReply && requestKnowledge) {
       if (knowledgeLoading || knowledgeError) { setChatError(knowledgeError || "知识库正在读取，请稍后发送。"); return; }
       if (!currentKnowledge) { selectKnowledge(undefined); setChatError("知识库已禁用或删除，已清除选择。请确认后重新发送。"); return; }
       if (knowledgeChanged) {
@@ -404,19 +411,20 @@ function App() {
     const conversationId = activeConversationId ?? crypto.randomUUID();
     const requestId = crypto.randomUUID();
     const assistantMessageId = crypto.randomUUID();
-    const nextMessage: Message = { id: crypto.randomUUID(), role: "user", content, status: "streaming", skill: requestSkill, knowledge: requestKnowledge };
+    const nextMessage: Message = { id: crypto.randomUUID(), role: "user", content, status: generateReply ? "streaming" : undefined, savedOnly: generateReply ? undefined : true, topicStart: activeConversation?.newTopicPending, skill: requestSkill, knowledge: requestKnowledge };
     const pendingReply: Message = { id: assistantMessageId, role: "assistant", content: "", status: "streaming" };
-    const history = buildRequestHistory(messages, content, chatSettings.contextTurns);
-    activeRequestRef.current = { requestId, conversationId, assistantMessageId };
+    const newMessages = generateReply ? [nextMessage, pendingReply] : [nextMessage];
+    const history = buildRequestHistory(activeConversation?.newTopicPending ? [] : messages, content, chatSettings.contextTurns);
+    if (generateReply) activeRequestRef.current = { requestId, conversationId, assistantMessageId };
     followBottomRef.current = true;
     setConversations((current) => {
       const existing = current.find((conversation) => conversation.id === conversationId);
       if (existing) {
         return current.map((conversation) => conversation.id === conversationId
-          ? { ...conversation, skill: requestSkill, knowledge: requestKnowledge, messages: [...conversation.messages, nextMessage, pendingReply] }
+          ? { ...conversation, model: selectedModel, skill: requestSkill, knowledge: requestKnowledge, newTopicPending: undefined, messages: [...conversation.messages, ...newMessages] }
           : conversation);
       }
-      return [{ id: conversationId, title: content.slice(0, 24), date: new Date().toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }), model: selectedModel, skill: requestSkill, knowledge: requestKnowledge, messages: [nextMessage, pendingReply] }, ...current];
+      return [{ id: conversationId, title: content.slice(0, 24), date: new Date().toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }), model: selectedModel, skill: requestSkill, knowledge: requestKnowledge, messages: newMessages }, ...current];
     });
     setActiveConversationId(conversationId);
     setDraft("");
@@ -426,6 +434,7 @@ function App() {
       delete next[conversationId];
       return next;
     });
+    if (!generateReply) return;
     setReplyingId(conversationId);
     setStreamingMessageId(assistantMessageId);
     let receivedText = "";
@@ -502,7 +511,7 @@ function App() {
     setConversations((current) => current.flatMap((item) => {
       if (item.id !== conversationId) return [item];
       const remaining = item.messages.filter((message) => message.id !== failedMessage.id);
-      return remaining.length ? [{ ...item, messages: remaining }] : [];
+      return remaining.length ? [{ ...item, newTopicPending: failedMessage.topicStart || item.newTopicPending || undefined, messages: remaining }] : [];
     }));
     if (conversation.messages.length === 1) { setDraftSkill(conversation.skill); setDraftKnowledge(conversation.knowledge); setActiveConversationId(null); }
     setConversationErrors((current) => {
@@ -513,6 +522,40 @@ function App() {
     setChatError("");
     window.requestAnimationFrame(() => textareaRef.current?.focus());
   };
+
+  const focusComposer = () => window.requestAnimationFrame(() => textareaRef.current?.focus());
+  const startNewTopic = () => {
+    if (activeRequestRef.current || mode === "image") return;
+    if (activeConversation?.messages.length) {
+      setConversations(current => current.map(conversation => conversation.id === activeConversationId
+        ? { ...conversation, newTopicPending: true } : conversation));
+      setChatError("");
+    }
+  };
+  // A single listener reads the latest committed actions; settings modals keep their own keyboard behavior.
+  useEffect(() => {
+    keyboardHandlerRef.current = event => {
+      if (settingsOpen || connectionCenterOpen) return;
+      const action = getAppShortcut(event);
+      if (action === undefined || (searchOpen && action !== "toggle-search")) return;
+      event.preventDefault();
+      setModelMenuOpen(false);
+      if (action === "toggle-search") { setSearchOpen(current => !current); return; }
+      if (action === "new-chat") startNewChat();
+      else if (action === "new-topic") startNewTopic();
+      else {
+        const id = typeof action === "number" ? conversations[action]?.id
+          : adjacentConversationId(conversations, activeConversationId, action === "next-chat" ? 1 : -1);
+        if (id) selectConversation(id);
+      }
+      focusComposer();
+    };
+  });
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => keyboardHandlerRef.current(event);
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, []);
 
   const renderConversation = (conversation: Conversation) => {
     const isActive = activeConversationId === conversation.id;
@@ -563,7 +606,7 @@ function App() {
           <strong>ModelPort</strong>
         </div>
         <div className="brand-actions">
-          <button aria-label="搜索会话" className="icon-button" disabled title="搜索功能正在开发" type="button"><Icon name="search" /></button>
+          <button aria-label="搜索会话" className="icon-button" onClick={() => setSearchOpen(true)} title="搜索会话（Ctrl + K）" type="button"><Icon name="search" /></button>
           <button aria-label="会话归档" className="icon-button" disabled title="归档功能正在开发" type="button"><Icon name="archive" /></button>
           <button
             aria-label={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}
@@ -605,7 +648,7 @@ function App() {
             <button aria-label="设置" onClick={() => openSettings()} type="button"><Icon name="settings" /><span>设置</span></button>
             <button onClick={() => setConnectionCenterOpen(true)} type="button"><Icon name="providers" /><span>模型连接</span>{!configuredKeys.openai && !configuredKeys.deepseek && <span className="status-dot" />}</button>
             <button disabled title="帮助中心正在开发" type="button"><Icon name="help" /><span>帮助</span></button>
-            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.5.0）</span></button>
+            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.6.0）</span></button>
           </nav>
         </footer>
       </aside>
@@ -644,7 +687,9 @@ function App() {
                 <span>{activeConversation?.title ?? "新对话"}</span>
               </div>
               {messages.map((message) => (
-                <article className={`message ${message.role}`} key={message.id}>
+                <Fragment key={message.id}>
+                {message.topicStart && <div className="topic-divider">新话题 · 不携带之前的聊天上下文</div>}
+                <article className={`message ${message.role}`}>
                   {message.role === "assistant" && <div className="assistant-avatar"><Icon name="spark" size={18} /></div>}
                   <div className="message-bubble" style={{ fontSize: chatSettings.fontSize }}>
                     {message.role === "assistant"
@@ -656,6 +701,7 @@ function App() {
                       : message.content}
                     {message.skill && <span className="message-skill">选用技能：{message.skill.name} · {message.skill.revision.slice(0, 8)}</span>}
                     {message.knowledge && <span className="message-knowledge">选用知识库：{message.knowledge.name} · {message.knowledge.revision.slice(0, 8)}</span>}
+                    {message.savedOnly && <span className="stream-note">仅保存，未生成回复</span>}
                     {message.role === "assistant" && message.retrieval && <KnowledgeSources context={message.retrieval} />}
                     {message.role === "assistant" && message.status === "stopped" && <span className="stream-note">已停止生成</span>}
                     {message.role === "assistant" && message.status === "failed" && <span className="stream-note">生成失败</span>}
@@ -663,7 +709,9 @@ function App() {
                     {message.id === editableFailedMessage?.id && <span className="stream-note">{message.status === "stopped" ? "回复已停止" : message.status === "failed" ? "回复失败" : "回复中断"}</span>}
                   </div>
                 </article>
+                </Fragment>
               ))}
+              {activeConversation?.newTopicPending && <div className="topic-divider" role="status">新话题 · 下一条消息将重新开始上下文</div>}
             </div>
           )}
         </section>
@@ -680,9 +728,13 @@ function App() {
               aria-label="消息输入框"
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
+                if (event.repeat) return;
                 if (shouldSendOnKey(event.nativeEvent, chatSettings.sendShortcut)) {
                   event.preventDefault();
-                  sendMessage();
+                  void sendMessage();
+                } else if (matchesSaveOnlyShortcut(event.nativeEvent, chatSettings.sendWithoutReplyShortcut)) {
+                  event.preventDefault();
+                  void sendMessage(undefined, false);
                 }
               }}
               disabled={mode === "image"}
@@ -785,6 +837,9 @@ function App() {
           onSaveChatSettings={settings => setChatPreferences({ settings: saveChatSettings(settings), error: "" })}
         />
       )}
+      {searchOpen && <ConversationSearchDialog conversations={conversations} onClose={() => setSearchOpen(false)} onSelect={id => {
+        selectConversation(id); setSearchOpen(false); focusComposer();
+      }} />}
     </div>
   );
 }

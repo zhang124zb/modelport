@@ -10,7 +10,9 @@ export const settingsSections = [
   { id: "skills", label: "Skills", icon: "wand", description: "管理可复用的任务技能与指令。", plannedFields: ["技能导入", "启用状态", "技能权限"] },
   { id: "agents", label: "智能体", icon: "robot", description: "创建具有独立角色、模型与工具的智能体。", plannedFields: ["角色指令", "智能体模型", "可用工具"] },
   { id: "documents", label: "文档解析器", icon: "document", description: "配置文档读取、文本提取与分块方式。", plannedFields: ["解析服务", "文件格式", "分块策略"] },
-  { id: "chat", label: "对话设置", icon: "chat", description: "调整输入方式、历史上下文、基础指令与回复展示。", plannedFields: [] },
+  { id: "chat", label: "对话设置", icon: "chat", description: "调整历史上下文、基础指令与回复展示。", plannedFields: [] },
+  { id: "keyboard", label: "键盘快捷键", icon: "keyboard", description: "查看操作组合，设置两种发送方式。", plannedFields: [] },
+  { id: "general", label: "常规设置", icon: "settings", description: "应用基础偏好与启动行为的独立开发入口。", plannedFields: ["语言与地区", "主题与外观", "启动行为", "数据管理"] },
 ] as const satisfies readonly { id: string; label: string; icon: IconName; description: string; plannedFields: readonly string[] }[];
 
 export type SettingsSection = (typeof settingsSections)[number];

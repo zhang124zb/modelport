@@ -55,7 +55,7 @@ try {
 
   await evaluate("{ const button = document.querySelector('.utility-nav [aria-label=\"设置\"]'); button.focus(); button.click(); }");
   await waitFor("Boolean(document.querySelector('.settings-dialog:modal'))");
-  const labels = ["ModelPort账户", "模型提供方", "默认模型", "联网搜索", "MCP", "知识库", "Skills", "智能体", "文档解析器", "对话设置"];
+  const labels = ["ModelPort账户", "模型提供方", "默认模型", "联网搜索", "MCP", "知识库", "Skills", "智能体", "文档解析器", "对话设置", "键盘快捷键", "常规设置"];
   assert.deepEqual(await evaluate("[...document.querySelectorAll('.settings-nav button')].map(b => b.innerText.trim())"), labels);
   assert.equal(await evaluate("document.querySelector('#settings-page-title').textContent"), labels[0]);
   assert.ok(await evaluate("getComputedStyle(document.querySelector('.settings-dialog'), '::backdrop').backdropFilter.includes('blur')"));
@@ -73,7 +73,7 @@ try {
       await waitFor("document.querySelector('.settings-content .connection-notice')?.textContent.includes('连接成功')");
     }
   }
-  console.log("PASS: all 10 settings pages navigate correctly and provider settings connect to Ollama");
+  console.log("PASS: all 12 settings pages navigate correctly and provider settings connect to Ollama");
   await command("Emulation.setDeviceMetricsOverride", { width: 920, height: 680, deviceScaleFactor: 1, mobile: false });
   const compact = await evaluate(`(() => {
     const dialog = document.querySelector('.settings-dialog');

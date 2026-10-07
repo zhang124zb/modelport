@@ -6,6 +6,7 @@ import type { KnowledgeSettingsProps, ModelOption, SkillSettingsProps } from "@/
 import { SkillsSettingsPage } from "./SkillsSettingsPage";
 import { KnowledgeSettingsPage } from "./KnowledgeSettingsPage";
 import { ChatSettingsPage } from "./ChatSettingsPage";
+import { KeyboardShortcutsPage } from "./KeyboardShortcutsPage";
 import type { ChatSettings } from "@/lib/chat-settings";
 import type { SettingsSection, SettingsSectionId } from "./sections";
 
@@ -103,4 +104,6 @@ export const settingsPageComponents: Record<SettingsSectionId, ComponentType<Set
   agents: PlannedSettingsPage,
   documents: PlannedSettingsPage,
   chat: ChatSettingsPage,
+  keyboard: KeyboardShortcutsPage,
+  general: PlannedSettingsPage,
 };

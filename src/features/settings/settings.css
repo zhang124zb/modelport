@@ -61,8 +61,16 @@
 .chat-settings-actions { position: sticky; z-index: 1; bottom: -26px; display: flex; align-items: center; flex-wrap: wrap; gap: 9px; padding: 16px 0 20px; background: #fff; border-top: 1px solid #edf0f3; }
 .chat-settings-actions span { margin-right: auto; color: #87919a; font-size: 12px; }
 .chat-settings-actions button { padding: 9px 14px; border: 1px solid #dce6f0; border-radius: 9px; color: #267dcc; background: #edf5ff; font: inherit; font-size: 13px; cursor: pointer; }
-.chat-settings-actions .chat-settings-save { border-color: #1684f8; color: #fff; background: #1684f8; }
+.chat-settings-actions .chat-settings-save, .chat-settings-actions .keyboard-settings-save { border-color: #1684f8; color: #fff; background: #1684f8; }
 .chat-settings-actions button:disabled { opacity: 0.5; cursor: default; }
+
+.keyboard-shortcut-list { border-top: 1px solid #e1e6eb; }
+.keyboard-shortcut-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 58px; padding: 10px 2px; border-bottom: 1px solid #e1e6eb; color: #48525d; font-size: 15px; }
+.keyboard-shortcut-row select { width: 225px; max-width: 48%; height: 40px; padding: 0 18px; border: 1px solid #d7dfe8; border-radius: 24px; color: #53616e; background: #fff; font: 600 14px Consolas, monospace; }
+.keyboard-shortcut-row select:focus-visible { outline: 2px solid rgba(22, 132, 248, 0.55); outline-offset: 2px; }
+.keyboard-keycaps { display: flex; flex-shrink: 0; gap: 5px; min-width: 225px; }
+.keyboard-keycaps kbd { padding: 6px 8px; border: 1px solid #dce2e8; border-radius: 5px; background: #f7f9fb; box-shadow: 0 2px 0 #dce2e8; font: 600 13px Consolas, monospace; }
+@media (max-width: 980px) { .keyboard-keycaps { min-width: 210px; } .keyboard-shortcut-row select { width: 210px; } }
 
 .skills-page { display: grid; gap: 16px; }
 .skills-actions, .skills-editor-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; }

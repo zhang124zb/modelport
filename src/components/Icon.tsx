@@ -14,6 +14,7 @@ export type IconName =
   | "help"
   | "image"
   | "info"
+  | "keyboard"
   | "library"
   | "maximize"
   | "mcp"
@@ -31,6 +32,7 @@ export type IconName =
   | "wand";
 
 const iconShapes: Record<IconName, ReactNode> = {
+  keyboard: <><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 16h10"/></>,
   book: <><path d="M12 5v15M12 5C8 2 3 4 3 4v15s5-2 9 1c4-3 9-1 9-1V4s-5-2-9 1Z"/></>,
   cube: <><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 5v10l9 5 9-5V8M12 13v10"/></>,
   document: <><path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 16h6"/></>,

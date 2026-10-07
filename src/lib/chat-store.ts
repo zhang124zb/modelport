@@ -1,7 +1,7 @@
 import type { ChatTurn, KnowledgeContext, KnowledgeSource, ModelOption, ProviderId, SelectedKnowledge, SelectedSkill } from "@/lib/modelport";
 
 export type MessageStatus = "streaming" | "stopped" | "failed" | "interrupted";
-export type Message = ChatTurn & { id: string; status?: MessageStatus; skill?: SelectedSkill; knowledge?: SelectedKnowledge; retrieval?: KnowledgeContext };
+export type Message = ChatTurn & { id: string; status?: MessageStatus; skill?: SelectedSkill; knowledge?: SelectedKnowledge; retrieval?: KnowledgeContext; savedOnly?: boolean; topicStart?: boolean };
 export type Conversation = {
   id: string;
   title: string;
@@ -10,6 +10,7 @@ export type Conversation = {
   messages: Message[];
   skill?: SelectedSkill;
   knowledge?: SelectedKnowledge;
+  newTopicPending?: boolean;
 };
 
 type ChatState = {
@@ -52,6 +53,8 @@ function isConversation(value: unknown): value is Conversation {
 
 function normalizeMessage(message: Message): Message {
   const normalized: Message = { id: message.id, role: message.role, content: message.content };
+  if (message.role === "user" && message.savedOnly === true) normalized.savedOnly = true;
+  if (message.role === "user" && message.topicStart === true) normalized.topicStart = true;
   normalized.skill = normalizeSkill(message.skill);
   normalized.knowledge = normalizeSkill(message.knowledge);
   normalized.retrieval = normalizeRetrieval(message.retrieval);
@@ -99,6 +102,7 @@ export function loadChatState(): ChatState {
       messages: conversation.messages.map(normalizeMessage),
       skill: normalizeSkill(conversation.skill),
       knowledge: normalizeSkill(conversation.knowledge),
+      newTopicPending: conversation.newTopicPending === true ? true : undefined,
     }));
     const activeConversationId = typeof parsed.activeConversationId === "string"
       && conversations.some((conversation) => conversation.id === parsed.activeConversationId)

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { defaultChatSettings } from "@/lib/chat-settings";
+import { defaultDialogueSettings } from "@/lib/chat-settings";
 import type { ChatSettings } from "@/lib/chat-settings";
 import { errorMessage } from "@/lib/modelport";
 import type { SettingsPageProps } from "./pages";
@@ -15,21 +15,11 @@ export function ChatSettingsPage({ chatSettings, chatSettingsError, onSaveChatSe
   return (
     <form className="settings-page chat-settings-page" onSubmit={event => {
       event.preventDefault();
-      try { onSaveChatSettings(draft); setNotice("对话设置已保存，输入和展示立即生效；上下文与提示词用于下一次发送。"); }
+      try { onSaveChatSettings({ ...chatSettings, contextTurns: draft.contextTurns, systemPrompt: draft.systemPrompt, renderMarkdown: draft.renderMarkdown, fontSize: draft.fontSize }); setNotice("对话设置已保存，展示立即生效；上下文与提示词用于下一次发送。"); }
       catch (error) { setNotice(errorMessage(error)); }
     }}>
       <p className="chat-settings-summary">适用于所有对话，只保存在本机。不会删除历史记录或更改模型连接。</p>
       {(notice || chatSettingsError) && <p className="chat-settings-notice" role="status">{notice || chatSettingsError}</p>}
-      <section className="settings-card">
-        <h4>输入方式</h4>
-        <label className="chat-settings-field" htmlFor="chat-send-shortcut"><span>发送快捷键</span>
-          <select id="chat-send-shortcut" value={draft.sendShortcut} onChange={event => change({ sendShortcut: event.target.value === "ctrl-enter" ? "ctrl-enter" : "enter" })}>
-            <option value="enter">Enter 发送，Shift + Enter 换行</option>
-            <option value="ctrl-enter">Ctrl + Enter 发送，Enter 换行</option>
-          </select>
-        </label>
-        <p>中文输入法选词时不会触发发送。发送按钮始终可用。</p>
-      </section>
       <section className="settings-card">
         <h4>上下文与指令</h4>
         <label className="chat-settings-field" htmlFor="chat-context-turns"><span>携带历史 <output>{draft.contextTurns} 轮</output></span>
@@ -55,7 +45,7 @@ export function ChatSettingsPage({ chatSettings, chatSettingsError, onSaveChatSe
       </section>
       <footer className="chat-settings-actions">
         <span>{dirty ? "有未保存的修改" : "当前设置未改动"}</span>
-        <button onClick={() => { if (window.confirm("恢复对话设置默认值？只重置本页选项，不删除聊天记录。点击保存后才生效。")) { setDraft({ ...defaultChatSettings }); setNotice("默认值已恢复到表单，点击保存后生效。"); } }} type="button">恢复默认</button>
+        <button onClick={() => { if (window.confirm("恢复对话设置默认值？不会更改快捷键或删除聊天记录。点击保存后才生效。")) { setDraft(current => ({ ...current, ...defaultDialogueSettings })); setNotice("默认值已恢复到表单，点击保存后生效。"); } }} type="button">恢复默认</button>
         <button className="chat-settings-save" disabled={!dirty && !chatSettingsError} type="submit">保存设置</button>
       </footer>
     </form>
