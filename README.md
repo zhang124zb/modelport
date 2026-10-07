@@ -23,6 +23,7 @@ ModelPort（模型港）是一款本地优先的多模型 AI 桌面客户端。�
 - 两栏设置中心：ModelPort账户、模型提供方、默认模型、联网搜索、MCP、知识库、Skills、智能体、文档解析器和对话设置；后续功能带独立开发入口
 - 本地指令型 Skills：新建、单文件导入、从公开 GitHub 仓库预览安装、编辑、启用/禁用、删除，以及会话级技能选择和版本提示
 - 本地文本知识库：批量 TXT / Markdown 导入、资料管理、检索预览、聊天选择与来源快照；首版采用关键词检索，不下载额外模型
+- 技能与知识库在输入区同排选择，齿轮打开各自管理页；长名称悬停可查看完整名称
 
 当前只支持固定的 OpenAI、DeepSeek 官方 API 地址和本机 Ollama（`127.0.0.1:11434`）。Anthropic、图像生成、附件、重新生成和自动重试尚未接入；界面会明确标识尚不可用的入口。会话保存在本机 WebView 数据中，重启后保留；停止或中断的部分回复会保留标记，不作为下一次请求的完整助手回复。聊天内容未加密，API Key 仍单独保存在 Windows 安全凭据库。
 
@@ -81,9 +82,12 @@ $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9342 --rem
 Start-Process -FilePath "$PWD\release\ModelPort.exe"
 Remove-Item Env:WEBVIEW2_USER_DATA_FOLDER, Env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
 node scripts/verify-desktop.mjs 9342
+node scripts/verify-composer-layout.mjs 9342
 ```
 
 检查脚本只允许空白的测试数据目录，不会在含真实历史记录的窗口中运行。完成后关闭测试窗口，双击正常启动文件即可。
+
+输入区布局检查覆盖默认和最小窗口、两个管理入口的键盘操作，以及长名称与更新标记的同排显示，不修改本地技能或知识库。
 
 ## 后续更新
 

@@ -312,6 +312,7 @@ textarea:focus-visible {
   position: relative;
   z-index: 2;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 63px minmax(0, 1fr) auto;
   min-width: 0;
   height: calc(100% - 12px);
@@ -570,16 +571,18 @@ textarea:focus-visible {
 .composer-tools button:hover { color: #343b42; background: #eceff1; }
 .composer-tools button:disabled { opacity: 0.62; cursor: not-allowed; }
 .composer-tools button:disabled:hover { color: #66717b; background: transparent; }
-.composer-tools .mode-button { gap: 8px; padding: 0 9px; }
-.composer-meta { gap: 9px; }
-.context-count { color: #89939e; font-size: 14px; }
-.model-picker { position: relative; }
+.composer-tools { flex-shrink: 0; }
+.composer-tools .mode-button { gap: 8px; padding: 0 9px; white-space: nowrap; }
+.composer-meta { gap: 9px; min-width: 0; }
+.context-count { flex-shrink: 0; color: #89939e; font-size: 14px; white-space: nowrap; }
+.model-picker { position: relative; min-width: 0; }
 
 .model-trigger {
   display: flex;
   align-items: center;
   gap: 8px;
   height: 38px;
+  max-width: 100%;
   padding: 0 6px 0 4px;
   border: 0;
   border-radius: 10px;
@@ -590,12 +593,14 @@ textarea:focus-visible {
 }
 
 .model-trigger:hover { background: #eceff2; }
+.model-trigger > span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .model-logo,
 .provider-logo { display: grid; place-items: center; color: white; font-weight: 750; }
-.model-logo { width: 26px; height: 26px; border-radius: 50%; font-size: 12px; }
+.model-logo { flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; font-size: 12px; }
 
 .send-button {
   display: grid;
+  flex: 0 0 44px;
   place-items: center;
   width: 44px;
   height: 44px;
@@ -802,19 +807,17 @@ textarea:focus-visible {
   line-height: 1.5;
 }
 
-.skill-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px; color: #87919a; font-size: 12px; }
-.skill-bar > .icon { color: #788795; }
-.skill-bar select { min-width: 90px; max-width: min(230px, 42vw); padding: 6px 9px; border: 1px solid #dfe5eb; border-radius: 8px; color: #596d7e; background: #f9fbfd; font-size: 12px; text-overflow: ellipsis; }
-.skill-bar button { display: inline-flex; align-items: center; padding: 4px; border: 0; color: #84919c; background: transparent; cursor: pointer; }
-.skill-bar button.manage-skills { margin-left: auto; color: #3987d1; font-size: 12px; }
-.skill-bar button:disabled { cursor: default; opacity: 0.5; }
-.skill-update { color: #a27838; font-size: 11px; }
+.composer-context { display: flex; align-items: center; gap: 12px; margin: 4px 0 14px; }
+.skill-bar, .knowledge-bar { display: flex; flex: 1 1 0; align-items: center; gap: 5px; min-width: 0; max-width: 340px; padding: 3px 6px 3px 9px; border: 1px solid #e3e8ed; border-radius: 10px; color: #788795; background: #f5f7f9; font-size: 12px; }
+.composer-context label { flex-shrink: 0; white-space: nowrap; }
+.composer-context select { flex: 1 1 0; min-width: 0; width: 0; height: 30px; padding: 5px 0; border: 0; border-radius: 4px; color: #596d7e; background: transparent; font: inherit; text-overflow: ellipsis; cursor: pointer; }
+.composer-context select:focus-visible { outline: 2px solid rgba(22, 132, 248, 0.55); outline-offset: 1px; }
+.composer-context button { display: inline-flex; flex: 0 0 26px; align-items: center; justify-content: center; height: 26px; padding: 0; border: 0; border-radius: 6px; color: #84919c; background: transparent; cursor: pointer; }
+.composer-context button:hover:not(:disabled) { color: #3987d1; background: #e7edf4; }
+.composer-context button[data-error] { color: #a27838; }
+.composer-context :disabled { cursor: default; opacity: 0.5; }
+.skill-update { flex-shrink: 0; color: #a27838; font-size: 11px; white-space: nowrap; }
 .message-skill { display: block; margin-top: 8px; color: #8194a5; font-size: 11px; line-height: 1.5; }
-.knowledge-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -7px 0 15px; color: #87919a; font-size: 12px; }
-.knowledge-bar select { min-width: 90px; max-width: min(230px, 42vw); padding: 6px 9px; border: 1px solid #dfe5eb; border-radius: 8px; color: #596d7e; background: #f9fbfd; font-size: 12px; text-overflow: ellipsis; }
-.knowledge-bar button { display: inline-flex; align-items: center; padding: 4px; border: 0; color: #84919c; background: transparent; cursor: pointer; }
-.knowledge-bar button.manage-knowledge { margin-left: auto; color: #3987d1; font-size: 12px; }
-.knowledge-bar button:disabled { cursor: default; opacity: 0.5; }
 .message-knowledge, .knowledge-no-match { display: block; margin-top: 8px; color: #8194a5; font-size: 11px; line-height: 1.6; }
 .message-sources { margin-top: 14px; padding: 12px; border: 1px solid #dce6f0; border-radius: 9px; color: #637b91; background: #f8fbff; font-size: 12px; }
 .message-sources summary { cursor: pointer; overflow-wrap: anywhere; line-height: 1.7; }

@@ -605,7 +605,7 @@ function App() {
             <button aria-label="设置" onClick={() => openSettings()} type="button"><Icon name="settings" /><span>设置</span></button>
             <button onClick={() => setConnectionCenterOpen(true)} type="button"><Icon name="providers" /><span>模型连接</span>{!configuredKeys.openai && !configuredKeys.deepseek && <span className="status-dot" />}</button>
             <button disabled title="帮助中心正在开发" type="button"><Icon name="help" /><span>帮助</span></button>
-            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.4.0）</span></button>
+            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.4.1）</span></button>
           </nav>
         </footer>
       </aside>
@@ -689,32 +689,34 @@ function App() {
               rows={2}
               value={draft}
             />
-            <div className="skill-bar">
-              <Icon name="wand" size={17} /><label htmlFor="chat-skill">技能</label>
-              <select aria-label="选择技能" disabled={replying || skillsLoading || Boolean(skillsError) || mode === "image"} id="chat-skill"
-                onChange={(event) => selectSkill(skills.find((skill) => `${skill.id}:${skill.revision}` === event.target.value && skill.enabled))}
-                title="仅使用选中技能的指令；云端模型会收到正文，不执行脚本。"
-                value={selectedSkill ? `${selectedSkill.id}:${selectedSkill.revision}` : ""}>
-                <option value="">无技能</option>
-                {selectedSkill && (!currentSkill || skillChanged) && <option disabled value={`${selectedSkill.id}:${selectedSkill.revision}`}>{selectedSkill.name}（待确认更新）</option>}
-                {skills.filter((skill) => skill.enabled).map((skill) => <option key={skill.id} value={`${skill.id}:${skill.revision}`}>{skill.displayName}</option>)}
-              </select>
-              {selectedSkill && <button aria-label="清除技能" disabled={replying} onClick={() => selectSkill(undefined)} type="button"><Icon name="close" size={14} /></button>}
-              {skillChanged && <span className="skill-update">内容已更新</span>}
-              <button className="manage-skills" onClick={() => openSettings("skills")} type="button">管理技能{skillsError ? " · 读取异常" : ""}</button>
-            </div>
-            <div className="knowledge-bar">
-              <Icon name="book" size={17} /><label htmlFor="chat-knowledge">知识库</label>
-              <select aria-label="选择知识库" disabled={replying || knowledgeLoading || Boolean(knowledgeError) || mode === "image"} id="chat-knowledge"
-                onChange={event => selectKnowledge(knowledgeBases.find(base => `${base.id}:${base.revision}` === event.target.value && base.enabled))}
-                title="本地检索，仅发送命中片段；每次云端请求前会确认。" value={selectedKnowledge ? `${selectedKnowledge.id}:${selectedKnowledge.revision}` : ""}>
-                <option value="">无知识库</option>
-                {selectedKnowledge && (!currentKnowledge || knowledgeChanged) && <option disabled value={`${selectedKnowledge.id}:${selectedKnowledge.revision}`}>{selectedKnowledge.name}（待确认更新）</option>}
-                {knowledgeBases.filter(base => base.enabled).map(base => <option key={base.id} value={`${base.id}:${base.revision}`}>{base.name}</option>)}
-              </select>
-              {selectedKnowledge && <button aria-label="清除知识库" disabled={replying} onClick={() => selectKnowledge(undefined)} type="button"><Icon name="close" size={14} /></button>}
-              {knowledgeChanged && <span className="skill-update">资料已更新</span>}
-              <button className="manage-knowledge" onClick={() => openSettings("knowledge")} type="button">管理知识库{knowledgeError ? " · 读取异常" : ""}</button>
+            <div className="composer-context">
+              <div className="skill-bar">
+                <Icon name="wand" size={17} /><label htmlFor="chat-skill">技能</label>
+                <select aria-label="选择技能" disabled={replying || skillsLoading || Boolean(skillsError) || mode === "image"} id="chat-skill"
+                  onChange={(event) => selectSkill(skills.find((skill) => `${skill.id}:${skill.revision}` === event.target.value && skill.enabled))}
+                  title={`${selectedSkill ? `${selectedSkill.name}。` : ""}仅使用选中技能的指令；云端模型会收到正文，不执行脚本。`}
+                  value={selectedSkill ? `${selectedSkill.id}:${selectedSkill.revision}` : ""}>
+                  <option value="">无技能</option>
+                  {selectedSkill && (!currentSkill || skillChanged) && <option disabled value={`${selectedSkill.id}:${selectedSkill.revision}`}>{selectedSkill.name}（待确认更新）</option>}
+                  {skills.filter((skill) => skill.enabled).map((skill) => <option key={skill.id} value={`${skill.id}:${skill.revision}`}>{skill.displayName}</option>)}
+                </select>
+                {selectedSkill && <button aria-label="清除技能" disabled={replying} onClick={() => selectSkill(undefined)} type="button"><Icon name="close" size={14} /></button>}
+                {skillChanged && <span aria-label="技能内容已更新" className="skill-update" title="技能内容已更新，请重新选择确认新版本">已更新</span>}
+                <button aria-label={skillsError ? "管理技能（读取异常）" : "管理技能"} className="manage-skills" data-error={skillsError ? true : undefined} onClick={() => openSettings("skills")} title={skillsError ? "管理技能 · 读取异常" : "管理技能"} type="button"><Icon name="settings" size={16} /></button>
+              </div>
+              <div className="knowledge-bar">
+                <Icon name="book" size={17} /><label htmlFor="chat-knowledge">知识库</label>
+                <select aria-label="选择知识库" disabled={replying || knowledgeLoading || Boolean(knowledgeError) || mode === "image"} id="chat-knowledge"
+                  onChange={event => selectKnowledge(knowledgeBases.find(base => `${base.id}:${base.revision}` === event.target.value && base.enabled))}
+                  title={`${selectedKnowledge ? `${selectedKnowledge.name}。` : ""}本地检索，仅发送命中片段；每次云端请求前会确认。`} value={selectedKnowledge ? `${selectedKnowledge.id}:${selectedKnowledge.revision}` : ""}>
+                  <option value="">无知识库</option>
+                  {selectedKnowledge && (!currentKnowledge || knowledgeChanged) && <option disabled value={`${selectedKnowledge.id}:${selectedKnowledge.revision}`}>{selectedKnowledge.name}（待确认更新）</option>}
+                  {knowledgeBases.filter(base => base.enabled).map(base => <option key={base.id} value={`${base.id}:${base.revision}`}>{base.name}</option>)}
+                </select>
+                {selectedKnowledge && <button aria-label="清除知识库" disabled={replying} onClick={() => selectKnowledge(undefined)} type="button"><Icon name="close" size={14} /></button>}
+                {knowledgeChanged && <span aria-label="知识库资料已更新" className="skill-update" title="知识库资料已更新，请重新选择确认新版本">已更新</span>}
+                <button aria-label={knowledgeError ? "管理知识库（读取异常）" : "管理知识库"} className="manage-knowledge" data-error={knowledgeError ? true : undefined} onClick={() => openSettings("knowledge")} title={knowledgeError ? "管理知识库 · 读取异常" : "管理知识库"} type="button"><Icon name="settings" size={16} /></button>
+              </div>
             </div>
             <div className="composer-toolbar">
               <div className="composer-tools">
@@ -740,7 +742,7 @@ function App() {
                       <button className="manage-models" onClick={() => { setModelMenuOpen(false); setConnectionCenterOpen(true); }} type="button">管理模型连接</button>
                     </div>
                   )}
-                  <button className="model-trigger" onClick={() => setModelMenuOpen((open) => !open)} type="button">
+                  <button className="model-trigger" onClick={() => setModelMenuOpen((open) => !open)} title={selectedModel.name} type="button">
                     <span className="model-logo" style={{ background: selectedModel.tone }}>{selectedModel.label}</span>
                     <span>{selectedModel.name}</span>
                     <Icon name="chevron" size={18} />
