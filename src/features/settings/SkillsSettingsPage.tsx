@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Icon } from "@/components/Icon";
 import { errorMessage, isDesktop, modelport } from "@/lib/modelport";
 import type { GitHubSkillPreview, SkillPreview, SkillRecord } from "@/lib/modelport";
 import type { SettingsPageProps } from "./pages";
 import { GitHubSkillInstaller } from "./GitHubSkillInstaller";
+import { useSettingsLeaveGuard } from "./useSettingsLeaveGuard";
 
 type Editor = { id: string | null; revision: string | null; document: string; displayName: string; imported: boolean; baseline: string; github?: GitHubSkillPreview };
 const emptyDocument = "---\nname: my-skill\ndescription: \"\"\n---\n";
@@ -15,7 +15,6 @@ const templates = [
   { name: "代码审阅", slug: "code-review", description: "审阅用户粘贴的代码，找出问题并给出可操作的修改建议。", body: "只审阅用户提供的代码，不声称读取了本机文件或运行了测试。优先检查正确性、边界处理和安全问题。说明具体位置、原因和最小修改方案；不确定的结论明确标注。" },
 ];
 const fingerprint = (document: string, displayName: string) => JSON.stringify([document, displayName]);
-const canDiscard = ({ dirty, busy }: { dirty: boolean; busy: boolean }) => !busy && (!dirty || window.confirm("技能有未保存的内容，确定放弃修改吗？"));
 const fromRecord = (record: SkillRecord): Editor => ({ id: record.summary.id, revision: record.summary.revision,
   document: record.document, displayName: record.summary.displayName, imported: false,
   baseline: fingerprint(record.document, record.summary.displayName) });
@@ -30,18 +29,7 @@ export function SkillsSettingsPage({ skills, skillsLoading, skillsError, onSkill
   const [showGitHub, setShowGitHub] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const dirty = editor !== null && fingerprint(editor.document, editor.displayName) !== editor.baseline;
-  const leaveState = useRef({ dirty, busy }); leaveState.current = { dirty, busy };
-  const canLeave = () => canDiscard(leaveState.current);
-  useEffect(() => {
-    onRegisterLeaveGuard?.(() => canDiscard(leaveState.current));
-    let disposed = false;
-    let stopListening: (() => void) | undefined;
-    if (isDesktop) void getCurrentWindow().onCloseRequested((event) => {
-      if (!canDiscard(leaveState.current)) event.preventDefault();
-    }).then((stop) => { if (disposed) stop(); else stopListening = stop; })
-      .catch(() => { if (!disposed) setNotice("无法启用窗口关闭保护，请保存技能后再关闭软件。"); });
-    return () => { disposed = true; stopListening?.(); onRegisterLeaveGuard?.(null); };
-  }, [onRegisterLeaveGuard]);
+  const canLeave = useSettingsLeaveGuard({ dirty, busy, message: "技能有未保存的内容，确定放弃修改吗？", onRegisterLeaveGuard, onError: setNotice });
   const visible = skills.filter((skill) => (filter === "all" || skill.enabled === (filter === "enabled"))
     && `${skill.displayName} ${skill.name} ${skill.description}`.toLowerCase().includes(query.trim().toLowerCase()));
   const selected = skills.find((skill) => skill.id === editor?.id);

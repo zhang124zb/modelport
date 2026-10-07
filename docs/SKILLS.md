@@ -51,10 +51,12 @@ ModelPort 0.3.1 支持指令型技能和公开 GitHub 仓库安装。它把选�
 
 - `src/features/settings/SkillsSettingsPage.tsx`：列表、筛选、编辑、导入预览、确认与未保存提醒。
 - `src/features/settings/SettingsDialog.tsx`：页面退出保护；Skills 表单通过 `onRegisterLeaveGuard` 阻止误关闭或误切换分类，并监听原生窗口关闭请求保护未保存编辑。
+- `src/features/settings/useSettingsLeaveGuard.ts`：Skills 与知识库共用的设置 / 原生窗口退出保护。
 - `src/App.tsx`：技能库摘要、会话选择、聊天入口、版本更新确认和禁用后的选择清理。
 - `src/lib/modelport.ts`：数据类型和 Tauri 调用。
 - `src/lib/chat-store.ts`：可选会话/消息技能标记，兼容旧记录。
 - `src-tauri/src/skills.rs`：受限 YAML 解析、技能库读写、GitHub 来源保存和引用解析。
+- `src-tauri/src/local_data.rs`：与知识库共用的路径检查、进程间锁和受限原子 JSON 保存。
 - `src-tauri/src/github_skills.rs`：仓库/路径校验、固定域名联网下载、固定提交预览和安装。
 - `src/features/settings/GitHubSkillInstaller.tsx`：公开仓库地址、分支及文件路径表单；复用 Skills 页的审阅、确认及退出保护。
 - `src-tauri/src/connection.rs`：普通/流式请求共用的技能注入逻辑。

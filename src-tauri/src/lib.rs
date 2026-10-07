@@ -1,5 +1,7 @@
 mod connection;
 mod github_skills;
+mod knowledge;
+mod local_data;
 mod skills;
 use tauri::Manager;
 
@@ -8,6 +10,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            app.manage(knowledge::KnowledgeStore::new(
+                app.path().app_data_dir()?.join("knowledge"),
+            ));
             app.manage(skills::SkillStore::new(
                 app.path().app_data_dir()?.join("skills"),
             ));
@@ -30,6 +35,15 @@ pub fn run() {
             skills::remove_skill,
             github_skills::preview_github_skill,
             github_skills::install_github_skill,
+            knowledge::list_knowledge_bases,
+            knowledge::get_knowledge_base,
+            knowledge::save_knowledge_base,
+            knowledge::import_knowledge_documents,
+            knowledge::set_knowledge_base_enabled,
+            knowledge::remove_knowledge_base,
+            knowledge::remove_knowledge_document,
+            knowledge::get_knowledge_document,
+            knowledge::search_knowledge_base,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

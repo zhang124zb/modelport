@@ -2,11 +2,12 @@ import type { ComponentType } from "react";
 import { Icon } from "@/components/Icon";
 import { ProviderSettings } from "@/components/ConnectionModal";
 import type { ProviderSettingsProps } from "@/components/ConnectionModal";
-import type { ModelOption, SkillSettingsProps } from "@/lib/modelport";
+import type { KnowledgeSettingsProps, ModelOption, SkillSettingsProps } from "@/lib/modelport";
 import { SkillsSettingsPage } from "./SkillsSettingsPage";
+import { KnowledgeSettingsPage } from "./KnowledgeSettingsPage";
 import type { SettingsSection, SettingsSectionId } from "./sections";
 
-export type SettingsPageProps = SkillSettingsProps & {
+export type SettingsPageProps = SkillSettingsProps & KnowledgeSettingsProps & {
   section: SettingsSection;
   currentModel: ModelOption;
   modelChoices: readonly ModelOption[];
@@ -92,7 +93,7 @@ export const settingsPageComponents: Record<SettingsSectionId, ComponentType<Set
   defaults: DefaultsSettingsPage,
   "web-search": PlannedSettingsPage,
   mcp: PlannedSettingsPage,
-  knowledge: PlannedSettingsPage,
+  knowledge: KnowledgeSettingsPage,
   skills: SkillsSettingsPage,
   agents: PlannedSettingsPage,
   documents: PlannedSettingsPage,

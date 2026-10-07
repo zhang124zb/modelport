@@ -19,7 +19,7 @@
 | `defaults` | 默认模型 | 查看默认本地模型和当前对话模型；修改默认策略待开放 |
 | `web-search` | 联网搜索 | 搜索服务与搜索策略预留页 |
 | `mcp` | MCP | 服务配置、连接测试与工具授权预留页 |
-| `knowledge` | 知识库 | 资料导入、索引与检索预留页 |
+| `knowledge` | 知识库 | 已接入 TXT / Markdown 导入、分段、检索测试、启用 / 禁用与资料管理 |
 | `skills` | Skills | 已接入本地指令技能的新建、导入、GitHub 预览安装、编辑、启用/禁用与删除 |
 | `agents` | 智能体 | 角色、模型与工具预留页 |
 | `documents` | 文档解析器 | 解析服务、格式与分块预留页 |
@@ -36,11 +36,12 @@
 - `modelChoices`：当前已知的可选模型。
 - `providerProps`：现有连接状态与操作回调，包括选择提供方、密钥输入、保存/删除凭据、测试连接。
 - `skills`、`skillsLoading`、`skillsError`、`onSkillsChanged`：共享技能库摘要与刷新状态。
+- `knowledgeBases`、`knowledgeLoading`、`knowledgeError`、`onKnowledgeChanged`：知识库摘要与刷新状态。
 - `onRegisterLeaveGuard`：可选的表单退出确认，用于阻止未保存技能被误关闭。
 
 页面组件在模块顶层声明。开发某一项时，将该项在 `settingsPageComponents` 中的值替换为新组件即可；不需要修改主聊天界面或其他分类。公共导航保持不变，页面自己的表单状态放在对应组件中。
 
-目前“模型提供方”和“Skills”执行实际设置操作；Skills 用法和接口见 [Skills 使用与开发](./SKILLS.md)。其他未开放分类保留规划说明，不发送未实现的后端命令，不写入虚假的账户或配置状态。
+目前“模型提供方”、“Skills”和“知识库”执行实际设置操作；用法和接口见 [Skills 使用与开发](./SKILLS.md) 和 [知识库使用与开发](./KNOWLEDGE.md)。其他未开放分类保留规划说明，不发送未实现的后端命令，不写入虚假的账户或配置状态。
 
 ## 后续接入约定
 

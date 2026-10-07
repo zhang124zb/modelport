@@ -13,7 +13,8 @@ import {
   modelport,
   providerDetails,
 } from "@/lib/modelport";
-import type { ModelOption, ProviderId, SelectedSkill, SkillSummary } from "@/lib/modelport";
+import type { KnowledgeSummary, ModelOption, ProviderId, SelectedKnowledge, SelectedSkill, SkillSummary } from "@/lib/modelport";
+import { KnowledgeSources } from "@/components/KnowledgeSources";
 import type { SettingsSectionId } from "@/features/settings/sections";
 import { loadChatState, saveChatState } from "@/lib/chat-store";
 import type { Conversation, Message } from "@/lib/chat-store";
@@ -64,6 +65,10 @@ function App() {
   const [skillsLoading, setSkillsLoading] = useState(isDesktop);
   const [skillsError, setSkillsError] = useState("");
   const [draftSkill, setDraftSkill] = useState<SelectedSkill | undefined>();
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeSummary[]>([]);
+  const [knowledgeLoading, setKnowledgeLoading] = useState(isDesktop);
+  const [knowledgeError, setKnowledgeError] = useState("");
+  const [draftKnowledge, setDraftKnowledge] = useState<SelectedKnowledge | undefined>();
   const [selectedProvider, setSelectedProvider] = useState<ProviderId>("ollama");
   const [configuredKeys, setConfiguredKeys] = useState<Record<"openai" | "deepseek", boolean>>({ openai: false, deepseek: false });
   const [keyDraft, setKeyDraft] = useState("");
@@ -86,12 +91,16 @@ function App() {
   const saveTimerRef = useRef<number | null>(null);
   const persistedReplyingIdRef = useRef<string | null>(null);
   const skillsLoadRef = useRef(0);
+  const knowledgeLoadRef = useRef(0);
 
   const activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
   const messages = activeConversation?.messages ?? [];
   const selectedSkill = activeConversation ? activeConversation.skill : draftSkill;
   const currentSkill = skills.find((skill) => skill.id === selectedSkill?.id && skill.enabled);
   const skillChanged = Boolean(selectedSkill && currentSkill && currentSkill.revision !== selectedSkill.revision);
+  const selectedKnowledge = activeConversation ? activeConversation.knowledge : draftKnowledge;
+  const currentKnowledge = knowledgeBases.find(base => base.id === selectedKnowledge?.id && base.enabled);
+  const knowledgeChanged = Boolean(selectedKnowledge && currentKnowledge && currentKnowledge.revision !== selectedKnowledge.revision);
   const replying = replyingId !== null;
   const conversationError = activeConversationId ? conversationErrors[activeConversationId] : "";
   const lastMessage = messages[messages.length - 1];
@@ -129,6 +138,28 @@ function App() {
     if (activeConversationId) setConversations((current) => current.map((conversation) => conversation.id === activeConversationId
       ? { ...conversation, skill: selection } : conversation));
     else setDraftSkill(selection);
+    setChatError("");
+  };
+
+  const refreshKnowledge = useCallback(async () => {
+    if (!isDesktop) return;
+    const loadId = ++knowledgeLoadRef.current; setKnowledgeLoading(true);
+    try {
+      const loaded = await modelport.listKnowledgeBases();
+      if (loadId !== knowledgeLoadRef.current) return;
+      setKnowledgeBases(loaded); setKnowledgeError("");
+      const enabledIds = new Set(loaded.filter(base => base.enabled).map(base => base.id));
+      setDraftKnowledge(current => current && !enabledIds.has(current.id) ? undefined : current);
+      setConversations(current => current.map(conversation => conversation.knowledge && !enabledIds.has(conversation.knowledge.id)
+        ? { ...conversation, knowledge: undefined } : conversation));
+    } catch (error) { if (loadId === knowledgeLoadRef.current) setKnowledgeError(errorMessage(error)); }
+    finally { if (loadId === knowledgeLoadRef.current) setKnowledgeLoading(false); }
+  }, []);
+  useEffect(() => { void refreshKnowledge(); return () => { ++knowledgeLoadRef.current; }; }, [refreshKnowledge]);
+  const selectKnowledge = (base: KnowledgeSummary | undefined) => {
+    const selection = base ? { id: base.id, revision: base.revision, name: base.name } : undefined;
+    if (activeConversationId) setConversations(current => current.map(conversation => conversation.id === activeConversationId ? { ...conversation, knowledge: selection } : conversation));
+    else setDraftKnowledge(selection);
     setChatError("");
   };
 
@@ -228,6 +259,7 @@ function App() {
     setSelectedModel(modelChoices.find((model) => model.provider === "ollama" && model.id) ?? defaultModels[0]);
     setDraft("");
     setDraftSkill(undefined);
+    setDraftKnowledge(undefined);
     setChatError("");
     setMode("chat");
   };
@@ -237,6 +269,7 @@ function App() {
     setActiveConversationId(null);
     setDraft("");
     setDraftSkill(undefined);
+    setDraftKnowledge(undefined);
     setChatError("图像生成接口尚未接入；目前先完成文本对话连接。");
     setMode("image");
   };
@@ -253,6 +286,7 @@ function App() {
     setSettingsOpen(true);
     setSettingsSection(section);
     void refreshSkills();
+    void refreshKnowledge();
   };
 
   const closeSettings = () => {
@@ -352,10 +386,21 @@ function App() {
       }
     }
 
+    let requestKnowledge = selectedKnowledge;
+    if (requestKnowledge) {
+      if (knowledgeLoading || knowledgeError) { setChatError(knowledgeError || "知识库正在读取，请稍后发送。"); return; }
+      if (!currentKnowledge) { selectKnowledge(undefined); setChatError("知识库已禁用或删除，已清除选择。请确认后重新发送。"); return; }
+      if (knowledgeChanged) {
+        if (!window.confirm(`“${currentKnowledge.name}”已更新，确认使用新版资料？可先到知识库设置审阅。`)) return;
+        requestKnowledge = { id: currentKnowledge.id, revision: currentKnowledge.revision, name: currentKnowledge.name }; selectKnowledge(currentKnowledge);
+      }
+      if (selectedModel.provider !== "ollama" && !window.confirm(`本次将把“${requestKnowledge.name}”命中的最多 4 个资料片段发送给 ${providerDetails[selectedModel.provider].name}。确认继续？未命中时不会发送模型请求。`)) return;
+    }
+
     const conversationId = activeConversationId ?? crypto.randomUUID();
     const requestId = crypto.randomUUID();
     const assistantMessageId = crypto.randomUUID();
-    const nextMessage: Message = { id: crypto.randomUUID(), role: "user", content, status: "streaming", skill: requestSkill };
+    const nextMessage: Message = { id: crypto.randomUUID(), role: "user", content, status: "streaming", skill: requestSkill, knowledge: requestKnowledge };
     const pendingReply: Message = { id: assistantMessageId, role: "assistant", content: "", status: "streaming" };
     const history = [
       ...messages.filter((message) => message.content.trim().length > 0 && !message.status)
@@ -368,10 +413,10 @@ function App() {
       const existing = current.find((conversation) => conversation.id === conversationId);
       if (existing) {
         return current.map((conversation) => conversation.id === conversationId
-          ? { ...conversation, skill: requestSkill, messages: [...conversation.messages, nextMessage, pendingReply] }
+          ? { ...conversation, skill: requestSkill, knowledge: requestKnowledge, messages: [...conversation.messages, nextMessage, pendingReply] }
           : conversation);
       }
-      return [{ id: conversationId, title: content.slice(0, 24), date: new Date().toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }), model: selectedModel, skill: requestSkill, messages: [nextMessage, pendingReply] }, ...current];
+      return [{ id: conversationId, title: content.slice(0, 24), date: new Date().toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }), model: selectedModel, skill: requestSkill, knowledge: requestKnowledge, messages: [nextMessage, pendingReply] }, ...current];
     });
     setActiveConversationId(conversationId);
     setDraft("");
@@ -404,7 +449,10 @@ function App() {
             ? { ...message, content: message.content + delta }
             : message) }
           : conversation));
-      }, requestSkill ?? null);
+      }, requestSkill ?? null, requestKnowledge ?? null, (retrieval) => {
+        setConversations(current => current.map(conversation => conversation.id === conversationId
+          ? { ...conversation, messages: conversation.messages.map(message => message.id === assistantMessageId ? { ...message, retrieval } : message) } : conversation));
+      });
       settleMessages(result.status === "completed" && result.content
         ? undefined
         : result.status === "cancelled" ? "stopped" : "failed", result.content);
@@ -417,6 +465,7 @@ function App() {
     } catch (error) {
       settleMessages("failed", receivedText);
       if (requestSkill) void refreshSkills();
+      if (requestKnowledge) void refreshKnowledge();
       setConversationErrors((current) => ({ ...current, [conversationId]: errorMessage(error) }));
     } finally {
       if (activeRequestRef.current?.requestId === requestId) activeRequestRef.current = null;
@@ -455,7 +504,7 @@ function App() {
       const remaining = item.messages.filter((message) => message.id !== failedMessage.id);
       return remaining.length ? [{ ...item, messages: remaining }] : [];
     }));
-    if (conversation.messages.length === 1) setActiveConversationId(null);
+    if (conversation.messages.length === 1) { setDraftSkill(conversation.skill); setDraftKnowledge(conversation.knowledge); setActiveConversationId(null); }
     setConversationErrors((current) => {
       const next = { ...current };
       delete next[conversationId];
@@ -552,11 +601,11 @@ function App() {
             <button onClick={startImageChat} type="button"><Icon name="image" size={21} /><span>生成图片</span></button>
           </div>
           <nav aria-label="应用菜单" className="utility-nav">
-            <button disabled title="资料库正在开发" type="button"><Icon name="library" /><span>我的资料</span></button>
+            <button onClick={() => openSettings("knowledge")} type="button"><Icon name="library" /><span>我的资料</span></button>
             <button aria-label="设置" onClick={() => openSettings()} type="button"><Icon name="settings" /><span>设置</span></button>
             <button onClick={() => setConnectionCenterOpen(true)} type="button"><Icon name="providers" /><span>模型连接</span>{!configuredKeys.openai && !configuredKeys.deepseek && <span className="status-dot" />}</button>
             <button disabled title="帮助中心正在开发" type="button"><Icon name="help" /><span>帮助</span></button>
-            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.3.1）</span></button>
+            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.4.0）</span></button>
           </nav>
         </footer>
       </aside>
@@ -604,6 +653,8 @@ function App() {
                         : message.id === streamingMessageId && <div aria-label="正在生成回复" className="typing"><span /><span /><span /></div>
                       : message.content}
                     {message.skill && <span className="message-skill">选用技能：{message.skill.name} · {message.skill.revision.slice(0, 8)}</span>}
+                    {message.knowledge && <span className="message-knowledge">选用知识库：{message.knowledge.name} · {message.knowledge.revision.slice(0, 8)}</span>}
+                    {message.role === "assistant" && message.retrieval && <KnowledgeSources context={message.retrieval} />}
                     {message.role === "assistant" && message.status === "stopped" && <span className="stream-note">已停止生成</span>}
                     {message.role === "assistant" && message.status === "failed" && <span className="stream-note">生成失败</span>}
                     {message.role === "assistant" && message.status === "interrupted" && <span className="stream-note">生成中断</span>}
@@ -651,6 +702,19 @@ function App() {
               {selectedSkill && <button aria-label="清除技能" disabled={replying} onClick={() => selectSkill(undefined)} type="button"><Icon name="close" size={14} /></button>}
               {skillChanged && <span className="skill-update">内容已更新</span>}
               <button className="manage-skills" onClick={() => openSettings("skills")} type="button">管理技能{skillsError ? " · 读取异常" : ""}</button>
+            </div>
+            <div className="knowledge-bar">
+              <Icon name="book" size={17} /><label htmlFor="chat-knowledge">知识库</label>
+              <select aria-label="选择知识库" disabled={replying || knowledgeLoading || Boolean(knowledgeError) || mode === "image"} id="chat-knowledge"
+                onChange={event => selectKnowledge(knowledgeBases.find(base => `${base.id}:${base.revision}` === event.target.value && base.enabled))}
+                title="本地检索，仅发送命中片段；每次云端请求前会确认。" value={selectedKnowledge ? `${selectedKnowledge.id}:${selectedKnowledge.revision}` : ""}>
+                <option value="">无知识库</option>
+                {selectedKnowledge && (!currentKnowledge || knowledgeChanged) && <option disabled value={`${selectedKnowledge.id}:${selectedKnowledge.revision}`}>{selectedKnowledge.name}（待确认更新）</option>}
+                {knowledgeBases.filter(base => base.enabled).map(base => <option key={base.id} value={`${base.id}:${base.revision}`}>{base.name}</option>)}
+              </select>
+              {selectedKnowledge && <button aria-label="清除知识库" disabled={replying} onClick={() => selectKnowledge(undefined)} type="button"><Icon name="close" size={14} /></button>}
+              {knowledgeChanged && <span className="skill-update">资料已更新</span>}
+              <button className="manage-knowledge" onClick={() => openSettings("knowledge")} type="button">管理知识库{knowledgeError ? " · 读取异常" : ""}</button>
             </div>
             <div className="composer-toolbar">
               <div className="composer-tools">
@@ -708,6 +772,10 @@ function App() {
           skillsLoading={skillsLoading}
           skillsError={skillsError}
           onSkillsChanged={refreshSkills}
+          knowledgeBases={knowledgeBases}
+          knowledgeLoading={knowledgeLoading}
+          knowledgeError={knowledgeError}
+          onKnowledgeChanged={refreshKnowledge}
         />
       )}
     </div>

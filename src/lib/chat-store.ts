@@ -1,7 +1,7 @@
-import type { ChatTurn, ModelOption, ProviderId, SelectedSkill } from "@/lib/modelport";
+import type { ChatTurn, KnowledgeContext, KnowledgeSource, ModelOption, ProviderId, SelectedKnowledge, SelectedSkill } from "@/lib/modelport";
 
 export type MessageStatus = "streaming" | "stopped" | "failed" | "interrupted";
-export type Message = ChatTurn & { id: string; status?: MessageStatus; skill?: SelectedSkill };
+export type Message = ChatTurn & { id: string; status?: MessageStatus; skill?: SelectedSkill; knowledge?: SelectedKnowledge; retrieval?: KnowledgeContext };
 export type Conversation = {
   id: string;
   title: string;
@@ -9,6 +9,7 @@ export type Conversation = {
   model: ModelOption;
   messages: Message[];
   skill?: SelectedSkill;
+  knowledge?: SelectedKnowledge;
 };
 
 type ChatState = {
@@ -52,6 +53,8 @@ function isConversation(value: unknown): value is Conversation {
 function normalizeMessage(message: Message): Message {
   const normalized: Message = { id: message.id, role: message.role, content: message.content };
   normalized.skill = normalizeSkill(message.skill);
+  normalized.knowledge = normalizeSkill(message.knowledge);
+  normalized.retrieval = normalizeRetrieval(message.retrieval);
   if (message.status === "streaming") normalized.status = "interrupted";
   else if (message.status === "stopped" || message.status === "failed" || message.status === "interrupted") {
     normalized.status = message.status;
@@ -66,6 +69,23 @@ function normalizeSkill(value: unknown): SelectedSkill | undefined {
   return { id: value.id, revision: value.revision, name: value.name };
 }
 
+function normalizeRetrieval(value: unknown): KnowledgeContext | undefined {
+  if (!isRecord(value) || !Array.isArray(value.sources) || value.sources.length > 4) return undefined;
+  const base = normalizeSkill(value.base);
+  if (!base) return undefined;
+  const sources: KnowledgeSource[] = [];
+  for (const item of value.sources) {
+    if (!isRecord(item) || item.number !== sources.length + 1 || typeof item.documentId !== "string" || item.documentId.length > 64
+      || typeof item.documentRevision !== "string" || !/^[a-f0-9]{64}$/.test(item.documentRevision)
+      || typeof item.filename !== "string" || item.filename.length > 480 || typeof item.text !== "string" || item.text.length > 2000
+      || !Number.isInteger(item.chunkIndex) || (item.chunkIndex as number) < 1 || !Number.isInteger(item.startLine) || (item.startLine as number) < 1
+      || !Number.isInteger(item.endLine) || (item.endLine as number) < (item.startLine as number)) return undefined;
+    sources.push({ number: item.number as number, documentId: item.documentId, documentRevision: item.documentRevision, filename: item.filename,
+      text: item.text, chunkIndex: item.chunkIndex as number, startLine: item.startLine as number, endLine: item.endLine as number });
+  }
+  return { base, sources };
+}
+
 export function loadChatState(): ChatState {
   try {
     const stored = window.localStorage.getItem(storageKey);
@@ -78,6 +98,7 @@ export function loadChatState(): ChatState {
       ...conversation,
       messages: conversation.messages.map(normalizeMessage),
       skill: normalizeSkill(conversation.skill),
+      knowledge: normalizeSkill(conversation.knowledge),
     }));
     const activeConversationId = typeof parsed.activeConversationId === "string"
       && conversations.some((conversation) => conversation.id === parsed.activeConversationId)

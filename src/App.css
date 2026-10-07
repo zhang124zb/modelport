@@ -810,6 +810,17 @@ textarea:focus-visible {
 .skill-bar button:disabled { cursor: default; opacity: 0.5; }
 .skill-update { color: #a27838; font-size: 11px; }
 .message-skill { display: block; margin-top: 8px; color: #8194a5; font-size: 11px; line-height: 1.5; }
+.knowledge-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -7px 0 15px; color: #87919a; font-size: 12px; }
+.knowledge-bar select { min-width: 90px; max-width: min(230px, 42vw); padding: 6px 9px; border: 1px solid #dfe5eb; border-radius: 8px; color: #596d7e; background: #f9fbfd; font-size: 12px; text-overflow: ellipsis; }
+.knowledge-bar button { display: inline-flex; align-items: center; padding: 4px; border: 0; color: #84919c; background: transparent; cursor: pointer; }
+.knowledge-bar button.manage-knowledge { margin-left: auto; color: #3987d1; font-size: 12px; }
+.knowledge-bar button:disabled { cursor: default; opacity: 0.5; }
+.message-knowledge, .knowledge-no-match { display: block; margin-top: 8px; color: #8194a5; font-size: 11px; line-height: 1.6; }
+.message-sources { margin-top: 14px; padding: 12px; border: 1px solid #dce6f0; border-radius: 9px; color: #637b91; background: #f8fbff; font-size: 12px; }
+.message-sources summary { cursor: pointer; overflow-wrap: anywhere; line-height: 1.7; }
+.message-sources p, .message-sources small { color: #87919a; font-size: 11px; }
+.message-sources details { margin-top: 10px; }
+.message-sources pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; line-height: 1.8; }
 
 @media (max-height: 760px) {
   .conversation-item { min-height: 43px; }

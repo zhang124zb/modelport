@@ -27,6 +27,14 @@ export type GitHubSkillPreview = { origin: GitHubOrigin; document: string; previ
 export type SkillSettingsProps = {
   skills: readonly SkillSummary[]; skillsLoading: boolean; skillsError: string; onSkillsChanged: () => Promise<void>;
 };
+export type KnowledgeReference = { id: string; revision: string };
+export type SelectedKnowledge = KnowledgeReference & { name: string };
+export type KnowledgeSummary = SelectedKnowledge & { enabled: boolean; documentCount: number; chunkCount: number };
+export type KnowledgeDocument = { id: string; filename: string; revision: string; bytes: number; chunkCount: number };
+export type KnowledgeRecord = { summary: KnowledgeSummary; documents: KnowledgeDocument[] };
+export type KnowledgeSource = { number: number; documentId: string; documentRevision: string; filename: string; chunkIndex: number; startLine: number; endLine: number; text: string };
+export type KnowledgeContext = { base: SelectedKnowledge; sources: KnowledgeSource[] };
+export type KnowledgeSettingsProps = { knowledgeBases: readonly KnowledgeSummary[]; knowledgeLoading: boolean; knowledgeError: string; onKnowledgeChanged: () => Promise<void> };
 
 export type StreamChatResult = {
   status: "completed" | "cancelled" | "failed";
@@ -64,18 +72,21 @@ export function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return "操作失败，请稍后重试。";
 }
+const knowledgeReference = (base: KnowledgeReference) => ({ id: base.id, revision: base.revision });
 
 export const modelport = {
   hasKey: (provider: ProviderId) => invoke<boolean>("has_provider_key", { provider }),
   saveKey: (provider: ProviderId, key: string) => invoke<void>("save_provider_key", { provider, key }),
   removeKey: (provider: ProviderId) => invoke<void>("remove_provider_key", { provider }),
   listModels: (provider: ProviderId) => invoke<string[]>("list_available_models", { provider }),
-  sendChat: (provider: ProviderId, model: string, messages: ChatTurn[], skill: SkillReference | null = null) =>
-    invoke<string>("send_chat", { provider, model, messages, skill }),
-  streamChat: (provider: ProviderId, model: string, messages: ChatTurn[], requestId: string, onDelta: (delta: string) => void, skill: SkillReference | null = null) => {
+  sendChat: (provider: ProviderId, model: string, messages: ChatTurn[], skill: SkillReference | null = null, knowledge: KnowledgeReference | null = null) =>
+    invoke<string>("send_chat", { provider, model, messages, skill, knowledge: knowledge ? knowledgeReference(knowledge) : null }),
+  streamChat: (provider: ProviderId, model: string, messages: ChatTurn[], requestId: string, onDelta: (delta: string) => void, skill: SkillReference | null = null, knowledge: KnowledgeReference | null = null, onSources?: (context: KnowledgeContext) => void) => {
     const onEvent = new Channel<string>();
     onEvent.onmessage = onDelta;
-    return invoke<StreamChatResult>("stream_chat", { provider, model, messages, requestId, onEvent, skill });
+    const sourceChannel = knowledge && onSources ? new Channel<KnowledgeContext>() : null;
+    if (sourceChannel && onSources) sourceChannel.onmessage = onSources;
+    return invoke<StreamChatResult>("stream_chat", { provider, model, messages, requestId, onEvent, skill, knowledge: knowledge ? knowledgeReference(knowledge) : null, onSources: sourceChannel });
   },
   cancelChat: (requestId: string) => invoke<void>("cancel_chat", { requestId }),
   listSkills: () => invoke<SkillSummary[]>("list_skills"),
@@ -89,4 +100,13 @@ export const modelport = {
     invoke<SkillRecord>("save_skill", { document, displayName, imported, id, expectedRevision }),
   setSkillEnabled: (skill: SkillReference, enabled: boolean) => invoke<SkillSummary>("set_skill_enabled", { skill, enabled }),
   removeSkill: (skill: SkillReference) => invoke<void>("remove_skill", { skill }),
+  listKnowledgeBases: () => invoke<KnowledgeSummary[]>("list_knowledge_bases"),
+  getKnowledgeBase: (id: string) => invoke<KnowledgeRecord>("get_knowledge_base", { id }),
+  saveKnowledgeBase: (name: string, base: KnowledgeReference | null = null) => invoke<KnowledgeRecord>("save_knowledge_base", { name, base: base ? knowledgeReference(base) : null }),
+  importKnowledgeDocuments: (base: KnowledgeReference, documents: { filename: string; text: string }[], replace: boolean) => invoke<KnowledgeRecord>("import_knowledge_documents", { base: knowledgeReference(base), documents, replace }),
+  setKnowledgeEnabled: (base: KnowledgeReference, enabled: boolean) => invoke<KnowledgeSummary>("set_knowledge_base_enabled", { base: knowledgeReference(base), enabled }),
+  removeKnowledgeBase: (base: KnowledgeReference) => invoke<void>("remove_knowledge_base", { base: knowledgeReference(base) }),
+  removeKnowledgeDocument: (base: KnowledgeReference, documentId: string) => invoke<void>("remove_knowledge_document", { base: knowledgeReference(base), documentId }),
+  getKnowledgeDocument: (baseId: string, documentId: string) => invoke<{ summary: KnowledgeDocument; text: string }>("get_knowledge_document", { baseId, documentId }),
+  searchKnowledge: (base: KnowledgeReference, query: string) => invoke<KnowledgeContext>("search_knowledge_base", { base: knowledgeReference(base), query }),
 };

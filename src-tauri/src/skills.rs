@@ -1,12 +1,10 @@
 use crate::github_skills::{GitHubOrigin, document_hash};
+use crate::local_data;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{
-    collections::HashSet,
-    fs::{self, File, OpenOptions},
-    io::{Read, Write},
-    path::{Path, PathBuf},
-};
+#[cfg(test)]
+use std::fs;
+use std::{collections::HashSet, fs::File, path::PathBuf};
 use tauri::State;
 
 const MAX_DOCUMENT: usize = 128 * 1024;
@@ -199,27 +197,6 @@ impl StoredSkill {
     }
 }
 
-// Imported text never supplies a path. Only the application's own library file is accessed.
-fn check_path(path: &Path) -> Result<(), String> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) => {
-            #[cfg(windows)]
-            {
-                use std::os::windows::fs::MetadataExt;
-                if metadata.file_attributes() & 0x400 != 0 {
-                    return Err("技能存储位置不能是符号链接或目录联接。".into());
-                }
-            }
-            if metadata.file_type().is_symlink() {
-                return Err("技能存储位置不能是符号链接。".into());
-            }
-            Ok(())
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(_) => Err("无法检查技能存储位置。".into()),
-    }
-}
-
 impl SkillStore {
     pub fn new(root: PathBuf) -> Self {
         Self { root }
@@ -228,43 +205,14 @@ impl SkillStore {
         self.root.join("skills-state.v1.json")
     }
     fn lock(&self) -> Result<File, String> {
-        check_path(&self.root)?;
-        fs::create_dir_all(&self.root).map_err(|_| "无法创建本地技能目录。")?;
-        let path = self.root.join("library.lock");
-        check_path(&path)?;
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(path)
-            .map_err(|_| "无法访问技能库锁。")?;
-        file.try_lock()
-            .map_err(|_| "技能库正被另一个操作占用，请稍后重试。")?;
-        Ok(file) // Dropping the file releases the cross-process lock.
+        local_data::lock(&self.root)
     }
     fn read(&self) -> Result<Library, String> {
-        let path = self.path();
-        check_path(&path)?;
-        let file = match File::open(path) {
-            Ok(file) => file,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(Library {
-                    version: 1,
-                    skills: vec![],
-                });
-            }
-            Err(_) => return Err("无法读取本地技能库；原始数据未更改。".into()),
-        };
-        let mut bytes = Vec::new();
-        file.take((MAX_LIBRARY + 1) as u64)
-            .read_to_end(&mut bytes)
-            .map_err(|_| "读取技能库失败。")?;
-        if bytes.len() > MAX_LIBRARY {
-            return Err("技能库超过 8 MiB，原始数据未更改。".into());
-        }
-        let library: Library = serde_json::from_slice(&bytes)
-            .map_err(|_| "技能库文件损坏；请保留原文件并恢复备份，原始数据不会被覆盖。")?;
+        let library: Library =
+            local_data::read_json(&self.path(), MAX_LIBRARY)?.unwrap_or(Library {
+                version: 1,
+                skills: vec![],
+            });
         if library.version != 1 || library.skills.len() > MAX_SKILLS {
             return Err("技能库版本不支持或条目过多；原始数据未更改。".into());
         }
@@ -285,19 +233,7 @@ impl SkillStore {
         if library.skills.len() > MAX_SKILLS {
             return Err("技能数量最多为 200 个。".into());
         }
-        let bytes = serde_json::to_vec_pretty(library).map_err(|_| "无法生成技能库数据。")?;
-        if bytes.len() > MAX_LIBRARY {
-            return Err("技能库总大小不能超过 8 MiB。".into());
-        }
-        check_path(&self.path())?;
-        let mut temp =
-            tempfile::NamedTempFile::new_in(&self.root).map_err(|_| "无法创建保存临时文件。")?;
-        temp.write_all(&bytes)
-            .and_then(|_| temp.as_file().sync_all())
-            .map_err(|_| "技能保存失败，原始数据未更改。")?;
-        temp.persist(self.path())
-            .map_err(|_| "无法替换技能库，原始数据未更改。")?;
-        Ok(())
+        local_data::write_json(&self.path(), library, MAX_LIBRARY)
     }
     pub fn list(&self) -> Result<Vec<SkillSummary>, String> {
         let _lock = self.lock()?;
