@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { settingsPageComponents } from "./pages";
 import type { SettingsPageProps } from "./pages";
@@ -6,10 +6,14 @@ import { settingsSections } from "./sections";
 import type { SettingsSectionId } from "./sections";
 import "./settings.css";
 
-export type SettingsDialogProps = Omit<SettingsPageProps, "section"> & { onClose: () => void };
+export type SettingsDialogProps = Omit<SettingsPageProps, "section" | "onRegisterLeaveGuard"> & { onClose: () => void; initialSectionId?: SettingsSectionId };
 
-export function SettingsDialog({ onClose, ...pageProps }: SettingsDialogProps) {
-  const [activeSectionId, setActiveSectionId] = useState<SettingsSectionId>("account");
+export function SettingsDialog({ onClose, initialSectionId = "account", ...pageProps }: SettingsDialogProps) {
+  const [activeSectionId, setActiveSectionId] = useState<SettingsSectionId>(initialSectionId);
+  const leaveGuard = useRef<(() => boolean) | null>(null);
+  const registerLeaveGuard = useCallback((guard: (() => boolean) | null) => { leaveGuard.current = guard; }, []);
+  const canLeave = () => leaveGuard.current?.() !== false;
+  const requestClose = () => { if (canLeave()) onClose(); };
   const dialogRef = useRef<HTMLDialogElement>(null);
   const section = settingsSections.find((entry) => entry.id === activeSectionId) ?? settingsSections[0];
   const Page = settingsPageComponents[section.id];
@@ -25,11 +29,11 @@ export function SettingsDialog({ onClose, ...pageProps }: SettingsDialogProps) {
     <dialog
       aria-labelledby="settings-title"
       className="settings-dialog"
-      onCancel={(event) => { event.preventDefault(); onClose(); }}
+      onCancel={(event) => { event.preventDefault(); requestClose(); }}
       onMouseDown={(event) => {
         const rect = event.currentTarget.getBoundingClientRect();
         if (event.target === event.currentTarget && (event.clientX < rect.left || event.clientX > rect.right
-          || event.clientY < rect.top || event.clientY > rect.bottom)) onClose();
+          || event.clientY < rect.top || event.clientY > rect.bottom)) requestClose();
       }}
       ref={dialogRef}
     >
@@ -42,7 +46,7 @@ export function SettingsDialog({ onClose, ...pageProps }: SettingsDialogProps) {
               aria-current={entry.id === section.id ? "page" : undefined}
               className={entry.id === section.id ? "is-active" : ""}
               key={entry.id}
-              onClick={() => setActiveSectionId(entry.id)}
+              onClick={() => { if (entry.id !== section.id && canLeave()) setActiveSectionId(entry.id); }}
               type="button"
             ><Icon name={entry.icon} size={23} /><span>{entry.label}</span></button>
           ))}
@@ -51,10 +55,10 @@ export function SettingsDialog({ onClose, ...pageProps }: SettingsDialogProps) {
       <section aria-labelledby="settings-page-title" className="settings-main" id="settings-content">
         <header className="settings-heading">
           <div><h3 id="settings-page-title">{section.label}</h3><p>{section.description}</p></div>
-          <button aria-label="关闭设置" className="icon-button" onClick={onClose} type="button"><Icon name="close" /></button>
+          <button aria-label="关闭设置" className="icon-button" onClick={requestClose} type="button"><Icon name="close" /></button>
         </header>
         <div className="settings-content" key={section.id}>
-          <Page {...pageProps} section={section} />
+          <Page {...pageProps} onRegisterLeaveGuard={registerLeaveGuard} section={section} />
         </div>
       </section>
     </dialog>

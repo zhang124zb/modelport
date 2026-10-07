@@ -7,7 +7,7 @@ modelport/
 │  ├─ features/settings/ 设置分类、页面接口与组件映射
 │  └─ lib/               模型连接封装与本地会话存储
 ├─ src-tauri/           Tauri 窗口、Rust 命令和 Windows 凭据访问
-│  └─ src/connection.rs 云端及本地模型请求
+│  └─ src/              connection.rs（模型请求）、skills.rs（技能库）
 ├─ scripts/             可重复执行的构建脚本
 ├─ docs/                产品设计和维护文档
 ├─ release/             构建出的程序；由脚本生成，不提交到 Git
@@ -25,6 +25,7 @@ modelport/
 - `src/lib/chat-store.ts` 将对话保存在此应用的本机 WebView 数据中。聊天内容未加密，不写进 Git；API Key 不存入该数据。
 - `src/components/ai-elements/` 和 `src/components/ui/` 是界面组件代码，修改时与业务逻辑分开审查。
 - 设置模块通过固定分类 ID 与统一页面参数扩展，开发接口见 [设置模块开发文档](./SETTINGS.md)。模型提供方页面复用现有连接组件与回调。
+- 指令型技能在应用数据目录中独立保存，通过 UUID 与内容版本引用接入原生请求，接口和安全范围见 [Skills 文档](./SKILLS.md)。
 
 ## Git 中保存什么
 

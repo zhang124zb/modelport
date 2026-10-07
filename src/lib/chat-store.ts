@@ -1,13 +1,14 @@
-import type { ChatTurn, ModelOption, ProviderId } from "@/lib/modelport";
+import type { ChatTurn, ModelOption, ProviderId, SelectedSkill } from "@/lib/modelport";
 
 export type MessageStatus = "streaming" | "stopped" | "failed" | "interrupted";
-export type Message = ChatTurn & { id: string; status?: MessageStatus };
+export type Message = ChatTurn & { id: string; status?: MessageStatus; skill?: SelectedSkill };
 export type Conversation = {
   id: string;
   title: string;
   date: string;
   model: ModelOption;
   messages: Message[];
+  skill?: SelectedSkill;
 };
 
 type ChatState = {
@@ -50,11 +51,19 @@ function isConversation(value: unknown): value is Conversation {
 
 function normalizeMessage(message: Message): Message {
   const normalized: Message = { id: message.id, role: message.role, content: message.content };
+  normalized.skill = normalizeSkill(message.skill);
   if (message.status === "streaming") normalized.status = "interrupted";
   else if (message.status === "stopped" || message.status === "failed" || message.status === "interrupted") {
     normalized.status = message.status;
   }
   return normalized;
+}
+
+function normalizeSkill(value: unknown): SelectedSkill | undefined {
+  if (!isRecord(value) || typeof value.id !== "string" || value.id.length > 64
+    || typeof value.revision !== "string" || !/^[a-f0-9]{64}$/.test(value.revision)
+    || typeof value.name !== "string" || !value.name || value.name.length > 240) return undefined;
+  return { id: value.id, revision: value.revision, name: value.name };
 }
 
 export function loadChatState(): ChatState {
@@ -68,6 +77,7 @@ export function loadChatState(): ChatState {
     const conversations = parsed.conversations.filter(isConversation).map((conversation) => ({
       ...conversation,
       messages: conversation.messages.map(normalizeMessage),
+      skill: normalizeSkill(conversation.skill),
     }));
     const activeConversationId = typeof parsed.activeConversationId === "string"
       && conversations.some((conversation) => conversation.id === parsed.activeConversationId)

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent, MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ConnectionModal } from "@/components/ConnectionModal";
@@ -13,7 +13,8 @@ import {
   modelport,
   providerDetails,
 } from "@/lib/modelport";
-import type { ModelOption, ProviderId } from "@/lib/modelport";
+import type { ModelOption, ProviderId, SelectedSkill, SkillSummary } from "@/lib/modelport";
+import type { SettingsSectionId } from "@/features/settings/sections";
 import { loadChatState, saveChatState } from "@/lib/chat-store";
 import type { Conversation, Message } from "@/lib/chat-store";
 import "./App.css";
@@ -58,6 +59,11 @@ function App() {
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [connectionCenterOpen, setConnectionCenterOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("account");
+  const [skills, setSkills] = useState<SkillSummary[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(isDesktop);
+  const [skillsError, setSkillsError] = useState("");
+  const [draftSkill, setDraftSkill] = useState<SelectedSkill | undefined>();
   const [selectedProvider, setSelectedProvider] = useState<ProviderId>("ollama");
   const [configuredKeys, setConfiguredKeys] = useState<Record<"openai" | "deepseek", boolean>>({ openai: false, deepseek: false });
   const [keyDraft, setKeyDraft] = useState("");
@@ -79,9 +85,13 @@ function App() {
   const pendingSaveRef = useRef({ conversations, activeConversationId });
   const saveTimerRef = useRef<number | null>(null);
   const persistedReplyingIdRef = useRef<string | null>(null);
+  const skillsLoadRef = useRef(0);
 
   const activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
   const messages = activeConversation?.messages ?? [];
+  const selectedSkill = activeConversation ? activeConversation.skill : draftSkill;
+  const currentSkill = skills.find((skill) => skill.id === selectedSkill?.id && skill.enabled);
+  const skillChanged = Boolean(selectedSkill && currentSkill && currentSkill.revision !== selectedSkill.revision);
   const replying = replyingId !== null;
   const conversationError = activeConversationId ? conversationErrors[activeConversationId] : "";
   const lastMessage = messages[messages.length - 1];
@@ -97,6 +107,30 @@ function App() {
         ? "回复失败，可编辑问题后重试。"
         : "";
   const visibleError = chatError || conversationError || recoveryNotice || storageError;
+
+  const refreshSkills = useCallback(async () => {
+    if (!isDesktop) return;
+    const loadId = ++skillsLoadRef.current; setSkillsLoading(true);
+    try {
+      const loaded = await modelport.listSkills();
+      if (loadId !== skillsLoadRef.current) return;
+      setSkills(loaded); setSkillsError("");
+      const enabledIds = new Set(loaded.filter((skill) => skill.enabled).map((skill) => skill.id));
+      setDraftSkill((current) => current && !enabledIds.has(current.id) ? undefined : current);
+      setConversations((current) => current.map((conversation) => conversation.skill && !enabledIds.has(conversation.skill.id)
+        ? { ...conversation, skill: undefined } : conversation));
+    } catch (error) { if (loadId === skillsLoadRef.current) setSkillsError(errorMessage(error)); }
+    finally { if (loadId === skillsLoadRef.current) setSkillsLoading(false); }
+  }, []);
+  useEffect(() => { void refreshSkills(); return () => { ++skillsLoadRef.current; }; }, [refreshSkills]);
+
+  const selectSkill = (skill: SkillSummary | undefined) => {
+    const selection = skill ? { id: skill.id, revision: skill.revision, name: skill.displayName } : undefined;
+    if (activeConversationId) setConversations((current) => current.map((conversation) => conversation.id === activeConversationId
+      ? { ...conversation, skill: selection } : conversation));
+    else setDraftSkill(selection);
+    setChatError("");
+  };
 
   useEffect(() => {
     if (!isDesktop) return;
@@ -193,6 +227,7 @@ function App() {
     setActiveConversationId(null);
     setSelectedModel(modelChoices.find((model) => model.provider === "ollama" && model.id) ?? defaultModels[0]);
     setDraft("");
+    setDraftSkill(undefined);
     setChatError("");
     setMode("chat");
   };
@@ -201,6 +236,7 @@ function App() {
     followBottomRef.current = true;
     setActiveConversationId(null);
     setDraft("");
+    setDraftSkill(undefined);
     setChatError("图像生成接口尚未接入；目前先完成文本对话连接。");
     setMode("image");
   };
@@ -211,10 +247,12 @@ function App() {
     setConnectionCenterOpen(false);
   };
 
-  const openSettings = () => {
+  const openSettings = (section: SettingsSectionId = "account") => {
     closeConnectionCenter();
     setModelMenuOpen(false);
     setSettingsOpen(true);
+    setSettingsSection(section);
+    void refreshSkills();
   };
 
   const closeSettings = () => {
@@ -303,10 +341,21 @@ function App() {
       return;
     }
 
+    let requestSkill = selectedSkill;
+    if (requestSkill) {
+      if (skillsLoading || skillsError) { setChatError(skillsError || "技能库正在读取，请稍后发送。"); return; }
+      if (!currentSkill) { selectSkill(undefined); setChatError("技能已禁用或删除，已清除选择。请确认后重新发送。"); return; }
+      if (skillChanged) {
+        if (!window.confirm(`“${currentSkill.displayName}”的内容已更新。确认使用新版？可先到设置中审阅。旧回复仍可能影响模型，建议更换技能后新建对话。`)) return;
+        requestSkill = { id: currentSkill.id, revision: currentSkill.revision, name: currentSkill.displayName };
+        selectSkill(currentSkill);
+      }
+    }
+
     const conversationId = activeConversationId ?? crypto.randomUUID();
     const requestId = crypto.randomUUID();
     const assistantMessageId = crypto.randomUUID();
-    const nextMessage: Message = { id: crypto.randomUUID(), role: "user", content, status: "streaming" };
+    const nextMessage: Message = { id: crypto.randomUUID(), role: "user", content, status: "streaming", skill: requestSkill };
     const pendingReply: Message = { id: assistantMessageId, role: "assistant", content: "", status: "streaming" };
     const history = [
       ...messages.filter((message) => message.content.trim().length > 0 && !message.status)
@@ -319,10 +368,10 @@ function App() {
       const existing = current.find((conversation) => conversation.id === conversationId);
       if (existing) {
         return current.map((conversation) => conversation.id === conversationId
-          ? { ...conversation, messages: [...conversation.messages, nextMessage, pendingReply] }
+          ? { ...conversation, skill: requestSkill, messages: [...conversation.messages, nextMessage, pendingReply] }
           : conversation);
       }
-      return [{ id: conversationId, title: content.slice(0, 24), date: new Date().toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }), model: selectedModel, messages: [nextMessage, pendingReply] }, ...current];
+      return [{ id: conversationId, title: content.slice(0, 24), date: new Date().toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }), model: selectedModel, skill: requestSkill, messages: [nextMessage, pendingReply] }, ...current];
     });
     setActiveConversationId(conversationId);
     setDraft("");
@@ -355,7 +404,7 @@ function App() {
             ? { ...message, content: message.content + delta }
             : message) }
           : conversation));
-      });
+      }, requestSkill ?? null);
       settleMessages(result.status === "completed" && result.content
         ? undefined
         : result.status === "cancelled" ? "stopped" : "failed", result.content);
@@ -367,6 +416,7 @@ function App() {
       }
     } catch (error) {
       settleMessages("failed", receivedText);
+      if (requestSkill) void refreshSkills();
       setConversationErrors((current) => ({ ...current, [conversationId]: errorMessage(error) }));
     } finally {
       if (activeRequestRef.current?.requestId === requestId) activeRequestRef.current = null;
@@ -503,10 +553,10 @@ function App() {
           </div>
           <nav aria-label="应用菜单" className="utility-nav">
             <button disabled title="资料库正在开发" type="button"><Icon name="library" /><span>我的资料</span></button>
-            <button aria-label="设置" onClick={openSettings} type="button"><Icon name="settings" /><span>设置</span></button>
+            <button aria-label="设置" onClick={() => openSettings()} type="button"><Icon name="settings" /><span>设置</span></button>
             <button onClick={() => setConnectionCenterOpen(true)} type="button"><Icon name="providers" /><span>模型连接</span>{!configuredKeys.openai && !configuredKeys.deepseek && <span className="status-dot" />}</button>
             <button disabled title="帮助中心正在开发" type="button"><Icon name="help" /><span>帮助</span></button>
-            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.2.6）</span></button>
+            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.3.0）</span></button>
           </nav>
         </footer>
       </aside>
@@ -553,6 +603,7 @@ function App() {
                         ? <Suspense fallback={<span>正在排版回复…</span>}><MessageResponse key={message.id === streamingMessageId ? "streaming" : "static"} mode={message.id === streamingMessageId ? "streaming" : "static"}>{message.content}</MessageResponse></Suspense>
                         : message.id === streamingMessageId && <div aria-label="正在生成回复" className="typing"><span /><span /><span /></div>
                       : message.content}
+                    {message.skill && <span className="message-skill">选用技能：{message.skill.name} · {message.skill.revision.slice(0, 8)}</span>}
                     {message.role === "assistant" && message.status === "stopped" && <span className="stream-note">已停止生成</span>}
                     {message.role === "assistant" && message.status === "failed" && <span className="stream-note">生成失败</span>}
                     {message.role === "assistant" && message.status === "interrupted" && <span className="stream-note">生成中断</span>}
@@ -587,6 +638,20 @@ function App() {
               rows={2}
               value={draft}
             />
+            <div className="skill-bar">
+              <Icon name="wand" size={17} /><label htmlFor="chat-skill">技能</label>
+              <select aria-label="选择技能" disabled={replying || skillsLoading || Boolean(skillsError) || mode === "image"} id="chat-skill"
+                onChange={(event) => selectSkill(skills.find((skill) => `${skill.id}:${skill.revision}` === event.target.value && skill.enabled))}
+                title="仅使用选中技能的指令；云端模型会收到正文，不执行脚本。"
+                value={selectedSkill ? `${selectedSkill.id}:${selectedSkill.revision}` : ""}>
+                <option value="">无技能</option>
+                {selectedSkill && (!currentSkill || skillChanged) && <option disabled value={`${selectedSkill.id}:${selectedSkill.revision}`}>{selectedSkill.name}（待确认更新）</option>}
+                {skills.filter((skill) => skill.enabled).map((skill) => <option key={skill.id} value={`${skill.id}:${skill.revision}`}>{skill.displayName}</option>)}
+              </select>
+              {selectedSkill && <button aria-label="清除技能" disabled={replying} onClick={() => selectSkill(undefined)} type="button"><Icon name="close" size={14} /></button>}
+              {skillChanged && <span className="skill-update">内容已更新</span>}
+              <button className="manage-skills" onClick={() => openSettings("skills")} type="button">管理技能{skillsError ? " · 读取异常" : ""}</button>
+            </div>
             <div className="composer-toolbar">
               <div className="composer-tools">
                 <button aria-label="添加附件" disabled title="附件功能正在开发" type="button"><Icon name="plus" size={21} /></button>
@@ -638,6 +703,11 @@ function App() {
           modelChoices={modelChoices}
           onClose={closeSettings}
           providerProps={providerSettingsProps}
+          initialSectionId={settingsSection}
+          skills={skills}
+          skillsLoading={skillsLoading}
+          skillsError={skillsError}
+          onSkillsChanged={refreshSkills}
         />
       )}
     </div>

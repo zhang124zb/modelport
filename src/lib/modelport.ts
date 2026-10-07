@@ -15,6 +15,17 @@ export type ChatTurn = {
   content: string;
 };
 
+export type SkillReference = { id: string; revision: string };
+export type SelectedSkill = SkillReference & { name: string };
+export type SkillSummary = SkillReference & {
+  name: string; displayName: string; description: string; enabled: boolean; source: string; compatibility: string | null;
+};
+export type SkillRecord = { summary: SkillSummary; document: string };
+export type SkillPreview = { name: string; description: string; compatibility: string | null; body: string };
+export type SkillSettingsProps = {
+  skills: readonly SkillSummary[]; skillsLoading: boolean; skillsError: string; onSkillsChanged: () => Promise<void>;
+};
+
 export type StreamChatResult = {
   status: "completed" | "cancelled" | "failed";
   content: string;
@@ -57,12 +68,19 @@ export const modelport = {
   saveKey: (provider: ProviderId, key: string) => invoke<void>("save_provider_key", { provider, key }),
   removeKey: (provider: ProviderId) => invoke<void>("remove_provider_key", { provider }),
   listModels: (provider: ProviderId) => invoke<string[]>("list_available_models", { provider }),
-  sendChat: (provider: ProviderId, model: string, messages: ChatTurn[]) =>
-    invoke<string>("send_chat", { provider, model, messages }),
-  streamChat: (provider: ProviderId, model: string, messages: ChatTurn[], requestId: string, onDelta: (delta: string) => void) => {
+  sendChat: (provider: ProviderId, model: string, messages: ChatTurn[], skill: SkillReference | null = null) =>
+    invoke<string>("send_chat", { provider, model, messages, skill }),
+  streamChat: (provider: ProviderId, model: string, messages: ChatTurn[], requestId: string, onDelta: (delta: string) => void, skill: SkillReference | null = null) => {
     const onEvent = new Channel<string>();
     onEvent.onmessage = onDelta;
-    return invoke<StreamChatResult>("stream_chat", { provider, model, messages, requestId, onEvent });
+    return invoke<StreamChatResult>("stream_chat", { provider, model, messages, requestId, onEvent, skill });
   },
   cancelChat: (requestId: string) => invoke<void>("cancel_chat", { requestId }),
+  listSkills: () => invoke<SkillSummary[]>("list_skills"),
+  previewSkill: (document: string) => invoke<SkillPreview>("preview_skill", { document }),
+  getSkill: (id: string) => invoke<SkillRecord>("get_skill", { id }),
+  saveSkill: (document: string, displayName: string, imported: boolean, id: string | null = null, expectedRevision: string | null = null) =>
+    invoke<SkillRecord>("save_skill", { document, displayName, imported, id, expectedRevision }),
+  setSkillEnabled: (skill: SkillReference, enabled: boolean) => invoke<SkillSummary>("set_skill_enabled", { skill, enabled }),
+  removeSkill: (skill: SkillReference) => invoke<void>("remove_skill", { skill }),
 };

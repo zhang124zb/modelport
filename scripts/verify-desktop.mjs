@@ -2,52 +2,10 @@
 // Example: node scripts/verify-desktop.mjs 9342 [modal.png] [settings.png]
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
+import { connectDesktop } from "./desktop-client.mjs";
 
 const port = Number(process.argv[2] ?? 9342);
-const pages = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
-const page = pages.find((entry) => entry.url === "http://tauri.localhost/" && entry.title === "ModelPort");
-assert.ok(page, "ModelPort WebView must be running");
-const socket = new WebSocket(page.webSocketDebuggerUrl);
-await new Promise((resolve, reject) => {
-  socket.addEventListener("open", resolve, { once: true });
-  socket.addEventListener("error", reject, { once: true });
-});
-let nextId = 0;
-const pending = new Map();
-socket.addEventListener("message", ({ data }) => {
-  const message = JSON.parse(data);
-  const request = pending.get(message.id);
-  if (!request) return;
-  pending.delete(message.id);
-  clearTimeout(request.timer);
-  if (message.error) request.reject(new Error(message.error.message));
-  else request.resolve(message.result);
-});
-function command(method, params = {}) {
-  return new Promise((resolve, reject) => {
-    const id = ++nextId;
-    const timer = setTimeout(() => { pending.delete(id); reject(new Error(`${method} timed out`)); }, 15000);
-    pending.set(id, { resolve, reject, timer });
-    socket.send(JSON.stringify({ id, method, params }));
-  });
-}
-async function evaluate(expression) {
-  const result = await command("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
-  assert.ok(!result.exceptionDetails, JSON.stringify(result.exceptionDetails));
-  return result.result.value;
-}
-async function waitFor(expression) {
-  for (let attempt = 0; attempt < 50; attempt++) {
-    if (await evaluate(expression)) return;
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  assert.fail(`Condition not reached: ${expression}`);
-}
-async function reload() {
-  await evaluate("window.__verificationReloadMarker = true");
-  await command("Page.reload");
-  await waitFor("!window.__verificationReloadMarker && Boolean(document.querySelector('.model-trigger'))");
-}
+const { command, evaluate, waitFor, reload, close } = await connectDesktop(port);
 
 let originalState;
 try {
@@ -148,5 +106,5 @@ try {
       : `localStorage.setItem('modelport.chat.v1', ${JSON.stringify(originalState)})`);
     await reload();
   }
-  socket.close();
+  close();
 }

@@ -2,14 +2,16 @@ import type { ComponentType } from "react";
 import { Icon } from "@/components/Icon";
 import { ProviderSettings } from "@/components/ConnectionModal";
 import type { ProviderSettingsProps } from "@/components/ConnectionModal";
-import type { ModelOption } from "@/lib/modelport";
+import type { ModelOption, SkillSettingsProps } from "@/lib/modelport";
+import { SkillsSettingsPage } from "./SkillsSettingsPage";
 import type { SettingsSection, SettingsSectionId } from "./sections";
 
-export type SettingsPageProps = {
+export type SettingsPageProps = SkillSettingsProps & {
   section: SettingsSection;
   currentModel: ModelOption;
   modelChoices: readonly ModelOption[];
   providerProps: ProviderSettingsProps;
+  onRegisterLeaveGuard?: (guard: (() => boolean) | null) => void;
 };
 
 function PlannedSettingsPage({ section }: SettingsPageProps) {
@@ -91,7 +93,7 @@ export const settingsPageComponents: Record<SettingsSectionId, ComponentType<Set
   "web-search": PlannedSettingsPage,
   mcp: PlannedSettingsPage,
   knowledge: PlannedSettingsPage,
-  skills: PlannedSettingsPage,
+  skills: SkillsSettingsPage,
   agents: PlannedSettingsPage,
   documents: PlannedSettingsPage,
   chat: PlannedSettingsPage,

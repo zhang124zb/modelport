@@ -802,6 +802,15 @@ textarea:focus-visible {
   line-height: 1.5;
 }
 
+.skill-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px; color: #87919a; font-size: 12px; }
+.skill-bar > .icon { color: #788795; }
+.skill-bar select { min-width: 90px; max-width: min(230px, 42vw); padding: 6px 9px; border: 1px solid #dfe5eb; border-radius: 8px; color: #596d7e; background: #f9fbfd; font-size: 12px; text-overflow: ellipsis; }
+.skill-bar button { display: inline-flex; align-items: center; padding: 4px; border: 0; color: #84919c; background: transparent; cursor: pointer; }
+.skill-bar button.manage-skills { margin-left: auto; color: #3987d1; font-size: 12px; }
+.skill-bar button:disabled { cursor: default; opacity: 0.5; }
+.skill-update { color: #a27838; font-size: 11px; }
+.message-skill { display: block; margin-top: 8px; color: #8194a5; font-size: 11px; line-height: 1.5; }
+
 @media (max-height: 760px) {
   .conversation-item { min-height: 43px; }
   .conversation-section + .conversation-section { margin-top: 14px; }

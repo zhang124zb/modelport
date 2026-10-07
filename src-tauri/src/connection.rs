@@ -4,6 +4,7 @@ use std::{
     time::Duration,
 };
 
+use crate::skills::{SkillReference, SkillStore};
 use futures_util::{
     future::{Either, select},
     pin_mut,
@@ -198,6 +199,25 @@ fn validate_messages(messages: &[ChatMessage]) -> Result<(), String> {
     Ok(())
 }
 
+fn prepare_messages(
+    mut messages: Vec<ChatMessage>,
+    skill: Option<&SkillReference>,
+    store: &SkillStore,
+) -> Result<Vec<ChatMessage>, String> {
+    validate_messages(&messages)?;
+    if let Some(reference) = skill {
+        let instructions = store.resolve(reference)?;
+        messages.insert(0, ChatMessage { role: "system".into(), content: format!(
+            "以下是用户明确选择的任务技能。按技能指导完成用户任务；不要声称运行了本机脚本或访问了文件，本客户端只提供文本对话能力。\n\n{instructions}"
+        ) });
+    }
+    Ok(messages)
+}
+
+fn chat_body(model: &str, messages: &[ChatMessage], streaming: bool) -> Value {
+    json!({ "model": model, "messages": messages, "stream": streaming })
+}
+
 #[tauri::command]
 pub fn has_provider_key(provider: Provider) -> Result<bool, String> {
     if matches!(provider, Provider::Ollama) {
@@ -276,15 +296,17 @@ pub async fn send_chat(
     provider: Provider,
     model: String,
     messages: Vec<ChatMessage>,
+    skill: Option<SkillReference>,
+    store: State<'_, SkillStore>,
 ) -> Result<String, String> {
     validate_model(&model)?;
-    validate_messages(&messages)?;
+    let messages = prepare_messages(messages, skill.as_ref(), &store)?;
     let client = http_client()?;
     let mut request = client.post(provider.chat_url());
     if !matches!(provider, Provider::Ollama) {
         request = request.bearer_auth(api_key(provider)?);
     }
-    let body = json!({ "model": model, "messages": messages, "stream": false });
+    let body = chat_body(&model, &messages, false);
     let response = request
         .json(&body)
         .send()
@@ -536,12 +558,14 @@ pub async fn stream_chat(
     provider: Provider,
     model: String,
     messages: Vec<ChatMessage>,
+    skill: Option<SkillReference>,
+    store: State<'_, SkillStore>,
     request_id: String,
     on_event: Channel<String>,
     registry: State<'_, CancellationRegistry>,
 ) -> Result<StreamResult, String> {
     validate_model(&model)?;
-    validate_messages(&messages)?;
+    let messages = prepare_messages(messages, skill.as_ref(), &store)?;
     let (_active_request, mut cancellation) = registry.register(request_id)?;
     if *cancellation.borrow() {
         return Ok(StreamResult::cancelled(String::new()));
@@ -552,7 +576,7 @@ pub async fn stream_chat(
     if !matches!(provider, Provider::Ollama) {
         request = request.bearer_auth(api_key(provider)?);
     }
-    let body = json!({ "model": model, "messages": messages, "stream": true });
+    let body = chat_body(&model, &messages, true);
     let mut response = {
         let send_future = tokio::time::timeout(STREAM_IDLE_TIMEOUT, request.json(&body).send());
         let cancel_future = wait_for_cancel(&mut cancellation);
@@ -656,6 +680,69 @@ pub async fn stream_chat(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn skills_are_optional_and_only_native_resolved_instructions_are_injected() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SkillStore::new(dir.path().into());
+        let history = vec![ChatMessage {
+            role: "user".into(),
+            content: "question".into(),
+        }];
+        let ordinary = prepare_messages(history.clone(), None, &store).unwrap();
+        assert_eq!(
+            serde_json::to_value(&ordinary).unwrap(),
+            serde_json::to_value(&history).unwrap()
+        );
+        let id = uuid::Uuid::new_v4().to_string();
+        std::fs::write(dir.path().join("skills-state.v1.json"), serde_json::to_vec(&json!({
+            "version": 1, "skills": [{ "id": id, "document": "---\nname: test\ndescription: test\n---\nOnly say VERIFIED",
+                "displayName": "测试技能", "enabled": true, "source": "本地创建" }]
+        })).unwrap()).unwrap();
+        let summary = store.list().unwrap().pop().unwrap();
+        let reference = SkillReference {
+            id: summary.id,
+            revision: summary.revision,
+        };
+        let prepared = prepare_messages(history, Some(&reference), &store).unwrap();
+        assert_eq!(prepared.len(), 2);
+        assert_eq!(prepared[0].role, "system");
+        assert!(prepared[0].content.ends_with("Only say VERIFIED"));
+        assert_eq!(prepared[1].role, "user");
+        for _provider in [Provider::Openai, Provider::Deepseek, Provider::Ollama] {
+            for streaming in [false, true] {
+                let body = chat_body("test-model", &prepared, streaming);
+                assert_eq!(body["stream"], streaming);
+                assert_eq!(body["messages"][0]["role"], "system");
+                assert_eq!(body["messages"].as_array().unwrap().len(), 2);
+            }
+        }
+        assert!(
+            prepare_messages(
+                vec![ChatMessage {
+                    role: "system".into(),
+                    content: "untrusted override".into()
+                }],
+                None,
+                &store
+            )
+            .is_err()
+        );
+        assert!(
+            prepare_messages(
+                vec![ChatMessage {
+                    role: "user".into(),
+                    content: "question".into()
+                }],
+                Some(&SkillReference {
+                    id: "../../secret".into(),
+                    revision: "invalid".into()
+                }),
+                &store
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn providers_use_fixed_endpoints() {
