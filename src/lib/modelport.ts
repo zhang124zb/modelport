@@ -79,14 +79,14 @@ export const modelport = {
   saveKey: (provider: ProviderId, key: string) => invoke<void>("save_provider_key", { provider, key }),
   removeKey: (provider: ProviderId) => invoke<void>("remove_provider_key", { provider }),
   listModels: (provider: ProviderId) => invoke<string[]>("list_available_models", { provider }),
-  sendChat: (provider: ProviderId, model: string, messages: ChatTurn[], skill: SkillReference | null = null, knowledge: KnowledgeReference | null = null) =>
-    invoke<string>("send_chat", { provider, model, messages, skill, knowledge: knowledge ? knowledgeReference(knowledge) : null }),
-  streamChat: (provider: ProviderId, model: string, messages: ChatTurn[], requestId: string, onDelta: (delta: string) => void, skill: SkillReference | null = null, knowledge: KnowledgeReference | null = null, onSources?: (context: KnowledgeContext) => void) => {
+  sendChat: (provider: ProviderId, model: string, messages: ChatTurn[], skill: SkillReference | null = null, knowledge: KnowledgeReference | null = null, systemPrompt: string | null = null) =>
+    invoke<string>("send_chat", { provider, model, messages, skill, knowledge: knowledge ? knowledgeReference(knowledge) : null, systemPrompt }),
+  streamChat: (provider: ProviderId, model: string, messages: ChatTurn[], requestId: string, onDelta: (delta: string) => void, skill: SkillReference | null = null, knowledge: KnowledgeReference | null = null, onSources?: (context: KnowledgeContext) => void, systemPrompt: string | null = null) => {
     const onEvent = new Channel<string>();
     onEvent.onmessage = onDelta;
     const sourceChannel = knowledge && onSources ? new Channel<KnowledgeContext>() : null;
     if (sourceChannel && onSources) sourceChannel.onmessage = onSources;
-    return invoke<StreamChatResult>("stream_chat", { provider, model, messages, requestId, onEvent, skill, knowledge: knowledge ? knowledgeReference(knowledge) : null, onSources: sourceChannel });
+    return invoke<StreamChatResult>("stream_chat", { provider, model, messages, requestId, onEvent, skill, knowledge: knowledge ? knowledgeReference(knowledge) : null, onSources: sourceChannel, systemPrompt });
   },
   cancelChat: (requestId: string) => invoke<void>("cancel_chat", { requestId }),
   listSkills: () => invoke<SkillSummary[]>("list_skills"),

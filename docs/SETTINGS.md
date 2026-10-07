@@ -8,6 +8,7 @@
 - `src/features/settings/pages.tsx`：`SettingsPageProps` 页面接口和 `settingsPageComponents` 分类到组件的映射。
 - `src/features/settings/SettingsDialog.tsx`：分类切换、弹窗打开/关闭与公共页面布局。
 - `src/features/settings/settings.css`：独立的设置界面样式。
+- `src/features/settings/ChatSettingsPage.tsx`、`src/lib/chat-settings.ts`：对话偏好表单、保存与输入 / 展示 / 上下文逻辑。
 - `src/components/ConnectionModal.tsx`：可复用的 `ProviderSettings` 与 `ProviderSettingsProps`，供设置页和原来的模型连接弹窗共同使用。
 
 ## 分类 ID
@@ -23,7 +24,7 @@
 | `skills` | Skills | 已接入本地指令技能的新建、导入、GitHub 预览安装、编辑、启用/禁用与删除 |
 | `agents` | 智能体 | 角色、模型与工具预留页 |
 | `documents` | 文档解析器 | 解析服务、格式与分块预留页 |
-| `chat` | 对话设置 | 快捷键、上下文与展示预留页 |
+| `chat` | 对话设置 | 已接入发送快捷键、历史轮数、全局提示词、回复格式、消息字号及本地保存 |
 
 固定 ID 用于组件映射；后续增加持久化配置或路由时可沿用，显示名称可以独立调整。
 
@@ -37,11 +38,12 @@
 - `providerProps`：现有连接状态与操作回调，包括选择提供方、密钥输入、保存/删除凭据、测试连接。
 - `skills`、`skillsLoading`、`skillsError`、`onSkillsChanged`：共享技能库摘要与刷新状态。
 - `knowledgeBases`、`knowledgeLoading`、`knowledgeError`、`onKnowledgeChanged`：知识库摘要与刷新状态。
+- `chatSettings`、`chatSettingsError`、`onSaveChatSettings`：已保存对话配置、读取警告与保存回调；失败时不改变生效值。
 - `onRegisterLeaveGuard`：可选的表单退出确认，用于阻止未保存技能被误关闭。
 
 页面组件在模块顶层声明。开发某一项时，将该项在 `settingsPageComponents` 中的值替换为新组件即可；不需要修改主聊天界面或其他分类。公共导航保持不变，页面自己的表单状态放在对应组件中。
 
-目前“模型提供方”、“Skills”和“知识库”执行实际设置操作；用法和接口见 [Skills 使用与开发](./SKILLS.md) 和 [知识库使用与开发](./KNOWLEDGE.md)。其他未开放分类保留规划说明，不发送未实现的后端命令，不写入虚假的账户或配置状态。
+目前“模型提供方”、“Skills”、“知识库”和“对话设置”执行实际设置操作；用法和接口见 [Skills 使用与开发](./SKILLS.md)、[知识库使用与开发](./KNOWLEDGE.md) 和 [对话设置](./CHAT_SETTINGS.md)。其他未开放分类保留规划说明，不发送未实现的后端命令，不写入虚假的账户或配置状态。
 
 ## 后续接入约定
 

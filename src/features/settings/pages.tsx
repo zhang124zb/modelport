@@ -5,6 +5,8 @@ import type { ProviderSettingsProps } from "@/components/ConnectionModal";
 import type { KnowledgeSettingsProps, ModelOption, SkillSettingsProps } from "@/lib/modelport";
 import { SkillsSettingsPage } from "./SkillsSettingsPage";
 import { KnowledgeSettingsPage } from "./KnowledgeSettingsPage";
+import { ChatSettingsPage } from "./ChatSettingsPage";
+import type { ChatSettings } from "@/lib/chat-settings";
 import type { SettingsSection, SettingsSectionId } from "./sections";
 
 export type SettingsPageProps = SkillSettingsProps & KnowledgeSettingsProps & {
@@ -12,6 +14,9 @@ export type SettingsPageProps = SkillSettingsProps & KnowledgeSettingsProps & {
   currentModel: ModelOption;
   modelChoices: readonly ModelOption[];
   providerProps: ProviderSettingsProps;
+  chatSettings: ChatSettings;
+  chatSettingsError: string;
+  onSaveChatSettings: (settings: ChatSettings) => void;
   onRegisterLeaveGuard?: (guard: (() => boolean) | null) => void;
 };
 
@@ -97,5 +102,5 @@ export const settingsPageComponents: Record<SettingsSectionId, ComponentType<Set
   skills: SkillsSettingsPage,
   agents: PlannedSettingsPage,
   documents: PlannedSettingsPage,
-  chat: PlannedSettingsPage,
+  chat: ChatSettingsPage,
 };

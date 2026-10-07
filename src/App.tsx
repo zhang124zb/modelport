@@ -18,6 +18,7 @@ import { KnowledgeSources } from "@/components/KnowledgeSources";
 import type { SettingsSectionId } from "@/features/settings/sections";
 import { loadChatState, saveChatState } from "@/lib/chat-store";
 import type { Conversation, Message } from "@/lib/chat-store";
+import { buildRequestHistory, loadChatSettings, saveChatSettings, shouldSendOnKey } from "@/lib/chat-settings";
 import "./App.css";
 
 const MessageResponse = lazy(() =>
@@ -38,6 +39,8 @@ function withoutEmptyAssistantMessages(conversations: Conversation[]): Conversat
 }
 
 function App() {
+  const [chatPreferences, setChatPreferences] = useState(loadChatSettings);
+  const chatSettings = chatPreferences.settings;
   const [initialChatState] = useState(() => {
     const state = loadChatState();
     return { ...state, conversations: withoutEmptyAssistantMessages(state.conversations) };
@@ -115,7 +118,7 @@ function App() {
       : editableFailedMessage?.status === "failed"
         ? "回复失败，可编辑问题后重试。"
         : "";
-  const visibleError = chatError || conversationError || recoveryNotice || storageError;
+  const visibleError = chatError || conversationError || recoveryNotice || chatPreferences.error || storageError;
 
   const refreshSkills = useCallback(async () => {
     if (!isDesktop) return;
@@ -362,6 +365,7 @@ function App() {
       setChatError("真实模型请求仅能在 ModelPort 桌面应用中使用。");
       return;
     }
+    if (chatPreferences.error) { openSettings("chat"); return; }
     if (selectedModel.provider === "ollama" && !selectedModel.id) {
       setSelectedProvider("ollama");
       setConnectionCenterOpen(true);
@@ -402,11 +406,7 @@ function App() {
     const assistantMessageId = crypto.randomUUID();
     const nextMessage: Message = { id: crypto.randomUUID(), role: "user", content, status: "streaming", skill: requestSkill, knowledge: requestKnowledge };
     const pendingReply: Message = { id: assistantMessageId, role: "assistant", content: "", status: "streaming" };
-    const history = [
-      ...messages.filter((message) => message.content.trim().length > 0 && !message.status)
-        .map(({ role, content }) => ({ role, content })),
-      { role: "user" as const, content },
-    ];
+    const history = buildRequestHistory(messages, content, chatSettings.contextTurns);
     activeRequestRef.current = { requestId, conversationId, assistantMessageId };
     followBottomRef.current = true;
     setConversations((current) => {
@@ -452,7 +452,7 @@ function App() {
       }, requestSkill ?? null, requestKnowledge ?? null, (retrieval) => {
         setConversations(current => current.map(conversation => conversation.id === conversationId
           ? { ...conversation, messages: conversation.messages.map(message => message.id === assistantMessageId ? { ...message, retrieval } : message) } : conversation));
-      });
+      }, chatSettings.systemPrompt);
       settleMessages(result.status === "completed" && result.content
         ? undefined
         : result.status === "cancelled" ? "stopped" : "failed", result.content);
@@ -605,7 +605,7 @@ function App() {
             <button aria-label="设置" onClick={() => openSettings()} type="button"><Icon name="settings" /><span>设置</span></button>
             <button onClick={() => setConnectionCenterOpen(true)} type="button"><Icon name="providers" /><span>模型连接</span>{!configuredKeys.openai && !configuredKeys.deepseek && <span className="status-dot" />}</button>
             <button disabled title="帮助中心正在开发" type="button"><Icon name="help" /><span>帮助</span></button>
-            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.4.1）</span></button>
+            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.5.0）</span></button>
           </nav>
         </footer>
       </aside>
@@ -646,10 +646,12 @@ function App() {
               {messages.map((message) => (
                 <article className={`message ${message.role}`} key={message.id}>
                   {message.role === "assistant" && <div className="assistant-avatar"><Icon name="spark" size={18} /></div>}
-                  <div className="message-bubble">
+                  <div className="message-bubble" style={{ fontSize: chatSettings.fontSize }}>
                     {message.role === "assistant"
                       ? message.content
-                        ? <Suspense fallback={<span>正在排版回复…</span>}><MessageResponse key={message.id === streamingMessageId ? "streaming" : "static"} mode={message.id === streamingMessageId ? "streaming" : "static"}>{message.content}</MessageResponse></Suspense>
+                        ? chatSettings.renderMarkdown
+                          ? <Suspense fallback={<span>正在排版回复…</span>}><MessageResponse key={message.id === streamingMessageId ? "streaming" : "static"} mode={message.id === streamingMessageId ? "streaming" : "static"}>{message.content}</MessageResponse></Suspense>
+                          : <div className="message-plain-text">{message.content}</div>
                         : message.id === streamingMessageId && <div aria-label="正在生成回复" className="typing"><span /><span /><span /></div>
                       : message.content}
                     {message.skill && <span className="message-skill">选用技能：{message.skill.name} · {message.skill.revision.slice(0, 8)}</span>}
@@ -678,7 +680,7 @@ function App() {
               aria-label="消息输入框"
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
+                if (shouldSendOnKey(event.nativeEvent, chatSettings.sendShortcut)) {
                   event.preventDefault();
                   sendMessage();
                 }
@@ -724,7 +726,7 @@ function App() {
                 <button aria-label="深度思考" disabled title="深度思考选项正在开发" type="button"><Icon name="brain" size={23} /></button>
                 <button className="mode-button" disabled type="button"><Icon name="robot" size={22} /><span>{mode === "image" ? "绘图模式" : "对话模式"}</span></button>
                 <button aria-label="添加文档" disabled title="文档功能正在开发" type="button"><Icon name="file" size={21} /></button>
-                <button aria-label="对话参数" disabled title="参数设置正在开发" type="button"><Icon name="sliders" size={22} /></button>
+                <button aria-label="对话设置" onClick={() => openSettings("chat")} title="打开对话设置" type="button"><Icon name="sliders" size={22} /></button>
               </div>
 
               <div className="composer-meta">
@@ -778,6 +780,9 @@ function App() {
           knowledgeLoading={knowledgeLoading}
           knowledgeError={knowledgeError}
           onKnowledgeChanged={refreshKnowledge}
+          chatSettings={chatSettings}
+          chatSettingsError={chatPreferences.error}
+          onSaveChatSettings={settings => setChatPreferences({ settings: saveChatSettings(settings), error: "" })}
         />
       )}
     </div>

@@ -222,6 +222,31 @@ fn chat_body(model: &str, messages: &[ChatMessage], streaming: bool) -> Value {
     json!({ "model": model, "messages": messages, "stream": streaming })
 }
 
+fn with_system_prompt(
+    mut messages: Vec<ChatMessage>,
+    prompt: Option<&str>,
+) -> Result<Vec<ChatMessage>, String> {
+    if let Some(prompt) = prompt {
+        if prompt.chars().count() > 4000
+            || prompt
+                .chars()
+                .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
+        {
+            return Err("全局提示词无效或超过 4000 字符。".into());
+        }
+        if !prompt.trim().is_empty() {
+            messages.insert(
+                0,
+                ChatMessage {
+                    role: "system".into(),
+                    content: prompt.trim().into(),
+                },
+            );
+        }
+    }
+    Ok(messages)
+}
+
 fn prepare_knowledge(
     mut messages: Vec<ChatMessage>,
     knowledge: Option<&KnowledgeReference>,
@@ -334,9 +359,11 @@ pub async fn send_chat(
     store: State<'_, SkillStore>,
     knowledge: Option<KnowledgeReference>,
     knowledge_store: State<'_, KnowledgeStore>,
+    system_prompt: Option<String>,
 ) -> Result<String, String> {
     validate_model(&model)?;
     let messages = prepare_messages(messages, skill.as_ref(), &store)?;
+    let messages = with_system_prompt(messages, system_prompt.as_deref())?;
     let (messages, context) = prepare_knowledge(messages, knowledge.as_ref(), &knowledge_store)?;
     if context.is_some_and(|context| context.sources.is_empty()) {
         return Ok(NO_MATCH_REPLY.into());
@@ -607,11 +634,13 @@ pub async fn stream_chat(
     knowledge_store: State<'_, KnowledgeStore>,
     on_sources: Option<JavaScriptChannelId>,
     webview: Webview,
+    system_prompt: Option<String>,
 ) -> Result<StreamResult, String> {
     let source_channel: Option<Channel<KnowledgeContext>> =
         on_sources.map(|id| id.channel_on(webview));
     validate_model(&model)?;
     let messages = prepare_messages(messages, skill.as_ref(), &store)?;
+    let messages = with_system_prompt(messages, system_prompt.as_deref())?;
     let (_active_request, mut cancellation) = registry.register(request_id)?;
     if *cancellation.borrow() {
         return Ok(StreamResult::cancelled(String::new()));
@@ -743,6 +772,49 @@ pub async fn stream_chat(
 mod tests {
     use super::*;
     #[test]
+    fn global_prompt_is_optional_bounded_and_keeps_history_roles_restricted() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SkillStore::new(dir.path().into());
+        let history = vec![ChatMessage {
+            role: "user".into(),
+            content: "question".into(),
+        }];
+        for prompt in [None, Some(""), Some(" \n\t ")] {
+            let prepared = with_system_prompt(
+                prepare_messages(history.clone(), None, &store).unwrap(),
+                prompt,
+            )
+            .unwrap();
+            assert_eq!(
+                serde_json::to_value(&prepared).unwrap(),
+                serde_json::to_value(&history).unwrap()
+            );
+        }
+        let prepared =
+            with_system_prompt(history.clone(), Some("  Use Chinese.\nBe concise.  ")).unwrap();
+        for streaming in [false, true] {
+            let body = chat_body("test-model", &prepared, streaming);
+            assert_eq!(body["messages"][0]["role"], "system");
+            assert_eq!(body["messages"][0]["content"], "Use Chinese.\nBe concise.");
+            assert_eq!(body["messages"][1]["role"], "user");
+        }
+        assert!(with_system_prompt(history.clone(), Some(&"中".repeat(4000))).is_ok());
+        assert!(with_system_prompt(history.clone(), Some(&"中".repeat(4001))).is_err());
+        assert!(with_system_prompt(history, Some("hidden\0control")).is_err());
+        assert!(
+            prepare_messages(
+                vec![ChatMessage {
+                    role: "system".into(),
+                    content: "injected history".into()
+                }],
+                None,
+                &store
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn knowledge_is_optional_scoped_and_keeps_untrusted_text_out_of_system_messages() {
         let dir = tempfile::tempdir().unwrap();
         let store = KnowledgeStore::new(dir.path().into());
@@ -781,6 +853,11 @@ mod tests {
         assert_eq!(prepared[0].role, "system");
         assert!(!prepared[0].content.contains("UNTRUSTED_COMMAND"));
         assert_eq!(prepared[1].role, "user");
+        let combined = with_system_prompt(prepared.clone(), Some("GLOBAL_PREFERENCE")).unwrap();
+        assert_eq!(combined[0].content, "GLOBAL_PREFERENCE");
+        assert_eq!(combined[1].role, "system");
+        assert!(!combined[1].content.contains("UNTRUSTED_COMMAND"));
+        assert_eq!(combined[2].role, "user");
         assert!(prepared[1].content.contains("UNTRUSTED_COMMAND"));
         assert!(!prepared[1].content.contains("UNSELECTED_BASE_SECRET"));
         assert!(!prepared[1].content.contains("UNMATCHED_DOCUMENT"));
@@ -849,6 +926,10 @@ mod tests {
         assert_eq!(prepared[0].role, "system");
         assert!(prepared[0].content.ends_with("Only say VERIFIED"));
         assert_eq!(prepared[1].role, "user");
+        let combined = with_system_prompt(prepared.clone(), Some("GLOBAL_PREFERENCE")).unwrap();
+        assert_eq!(combined[0].content, "GLOBAL_PREFERENCE");
+        assert!(combined[1].content.ends_with("Only say VERIFIED"));
+        assert_eq!(combined[2].role, "user");
         for _provider in [Provider::Openai, Provider::Deepseek, Provider::Ollama] {
             for streaming in [false, true] {
                 let body = chat_body("test-model", &prepared, streaming);
