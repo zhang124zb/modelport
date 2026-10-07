@@ -7,6 +7,9 @@ import { SkillsSettingsPage } from "./SkillsSettingsPage";
 import { KnowledgeSettingsPage } from "./KnowledgeSettingsPage";
 import { ChatSettingsPage } from "./ChatSettingsPage";
 import { KeyboardShortcutsPage } from "./KeyboardShortcutsPage";
+import { GeneralSettingsPage } from "./GeneralSettingsPage";
+import type { GeneralSettings } from "@/lib/general-settings";
+import type { Conversation } from "@/lib/chat-store";
 import type { ChatSettings } from "@/lib/chat-settings";
 import type { SettingsSection, SettingsSectionId } from "./sections";
 
@@ -18,6 +21,14 @@ export type SettingsPageProps = SkillSettingsProps & KnowledgeSettingsProps & {
   chatSettings: ChatSettings;
   chatSettingsError: string;
   onSaveChatSettings: (settings: ChatSettings) => void;
+  generalSettings: GeneralSettings;
+  generalSettingsError: string;
+  onSaveGeneralSettings: (settings: GeneralSettings) => void;
+  chatData: readonly Conversation[];
+  chatBusy: boolean;
+  onExportChats: () => void;
+  onImportChats: (conversations: readonly Conversation[]) => void;
+  onClearChats: () => void;
   onRegisterLeaveGuard?: (guard: (() => boolean) | null) => void;
 };
 
@@ -105,5 +116,5 @@ export const settingsPageComponents: Record<SettingsSectionId, ComponentType<Set
   documents: PlannedSettingsPage,
   chat: ChatSettingsPage,
   keyboard: KeyboardShortcutsPage,
-  general: PlannedSettingsPage,
+  general: GeneralSettingsPage,
 };

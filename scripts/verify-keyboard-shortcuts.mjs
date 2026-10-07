@@ -76,7 +76,7 @@ try {
   }
   if (process.argv[3]) { const { data } = await command("Page.captureScreenshot", { format: "png" }); writeFileSync(process.argv[3], Buffer.from(data, "base64")); }
   await command("Emulation.clearDeviceMetricsOverride"); await closeSettings();
-  console.log("PASS: 8 shortcut rows, legacy preferences, independent defaults, save errors/leave guards, general placeholder and minimum-window layout");
+  console.log("PASS: 8 shortcut rows, legacy preferences, independent defaults, save errors/leave guards, general navigation and minimum-window layout");
 
   await trackRequests();
   await evaluate("document.querySelector('.model-trigger').click()");

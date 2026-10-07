@@ -26,7 +26,12 @@ export function SettingsDialog({ onClose, initialSectionId = "account", ...pageP
   }, []);
 
   useLayoutEffect(() => {
-    dialogRef.current?.querySelector('.settings-nav [aria-current="page"]')?.scrollIntoView({ block: "nearest" });
+    const nav = dialogRef.current?.querySelector(".settings-nav");
+    const ensureVisible = () => nav?.querySelector('[aria-current="page"]')?.scrollIntoView({ block: "nearest" });
+    ensureVisible();
+    const observer = new ResizeObserver(ensureVisible);
+    if (nav) observer.observe(nav);
+    return () => observer.disconnect();
   }, [activeSectionId]);
 
   return (

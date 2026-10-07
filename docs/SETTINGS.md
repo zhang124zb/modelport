@@ -10,6 +10,7 @@
 - `src/features/settings/settings.css`：独立的设置界面样式。
 - `src/features/settings/ChatSettingsPage.tsx`、`src/lib/chat-settings.ts`：对话偏好表单、保存与输入 / 展示 / 上下文逻辑。
 - `src/features/settings/KeyboardShortcutsPage.tsx`、`src/lib/keyboard-shortcuts.ts`：发送方式表单、固定组合和主界面按键判定；沿用对话偏好存储以保留旧发送配置。
+- `src/features/settings/GeneralSettingsPage.tsx`、`src/lib/general-settings.ts`、`src/theme.css`：常规配置、主题和启动偏好；`src/lib/chat-store.ts` 包含聊天备份校验与副本合并。
 - `src/components/ConnectionModal.tsx`：可复用的 `ProviderSettings` 与 `ProviderSettingsProps`，供设置页和原来的模型连接弹窗共同使用。
 
 ## 分类 ID
@@ -27,7 +28,7 @@
 | `documents` | 文档解析器 | 解析服务、格式与分块预留页 |
 | `chat` | 对话设置 | 已接入历史轮数、全局提示词、回复格式、消息字号及本地保存 |
 
-新增固定 ID：`keyboard`（键盘快捷键，实际配置与操作已接入），`general`（常规设置，预留语言与地区、主题与外观、启动行为、数据管理）。
+新增固定 ID：`keyboard`（键盘快捷键，实际配置与操作已接入），`general`（常规设置，主题、动画、启动界面和聊天备份 / 清空已接入；多语言、开机自启动、托盘及同步待后续版本）。
 
 固定 ID 用于组件映射；后续增加持久化配置或路由时可沿用，显示名称可以独立调整。
 
@@ -42,13 +43,15 @@
 - `skills`、`skillsLoading`、`skillsError`、`onSkillsChanged`：共享技能库摘要与刷新状态。
 - `knowledgeBases`、`knowledgeLoading`、`knowledgeError`、`onKnowledgeChanged`：知识库摘要与刷新状态。
 - `chatSettings`、`chatSettingsError`、`onSaveChatSettings`：已保存对话配置、读取警告与保存回调；失败时不改变生效值。
+- `generalSettings`、`generalSettingsError`、`onSaveGeneralSettings`：独立常规配置、读取警告与保存回调。
+- `chatData`、`chatBusy`、`onExportChats`、`onImportChats`、`onClearChats`：聊天统计、生成保护与数据管理回调；仅作用于聊天，不调用原生资料库 / 凭据写入。
 - `onRegisterLeaveGuard`：可选的表单退出确认，用于阻止未保存技能被误关闭。
 
 页面组件在模块顶层声明。开发某一项时，将该项在 `settingsPageComponents` 中的值替换为新组件即可；不需要修改主聊天界面或其他分类。公共导航保持不变，页面自己的表单状态放在对应组件中。
 
-目前“模型提供方”、“Skills”、“知识库”、“对话设置”和“键盘快捷键”执行实际设置操作；用法和接口见 [Skills 使用与开发](./SKILLS.md)、[知识库使用与开发](./KNOWLEDGE.md)、[对话设置](./CHAT_SETTINGS.md) 和 [键盘快捷键](./KEYBOARD_SHORTCUTS.md)。其他未开放分类保留规划说明，不发送未实现的后端命令，不写入虚假的账户或配置状态。
+目前“模型提供方”、“Skills”、“知识库”、“对话设置”、“键盘快捷键”和“常规设置”执行实际操作；用法和接口见 [Skills 使用与开发](./SKILLS.md)、[知识库使用与开发](./KNOWLEDGE.md)、[对话设置](./CHAT_SETTINGS.md)、[键盘快捷键](./KEYBOARD_SHORTCUTS.md) 和 [常规设置](./GENERAL_SETTINGS.md)。其他未开放分类保留规划说明，不发送未实现的后端命令，不写入虚假的账户或配置状态。
 
-常规设置开发时，新增 `GeneralSettingsPage.tsx` 并替换 `settingsPageComponents.general`；沿用 `sections.ts` 中的固定 ID 与规划项。实际字段和存储仅在对应功能实现时增加，需原生能力时再扩展页面参数和权限；不要提前写入无效开关。
+常规设置后续扩展沿用 `settingsPageComponents.general` 和独立 v1 存储。实际字段仅在功能实现时增加；需原生能力时再扩展页面参数和权限，不提前写入无效开关。
 
 ## 后续接入约定
 

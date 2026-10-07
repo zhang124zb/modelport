@@ -1,4 +1,4 @@
-import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent, MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ConnectionModal } from "@/components/ConnectionModal";
@@ -17,11 +17,13 @@ import {
 import type { KnowledgeSummary, ModelOption, ProviderId, SelectedKnowledge, SelectedSkill, SkillSummary } from "@/lib/modelport";
 import { KnowledgeSources } from "@/components/KnowledgeSources";
 import type { SettingsSectionId } from "@/features/settings/sections";
-import { loadChatState, saveChatState } from "@/lib/chat-store";
-import type { Conversation, Message } from "@/lib/chat-store";
+import { loadChatState, mergeImportedChats, saveChatState, serializeChatBackup } from "@/lib/chat-store";
+import type { ChatState, Conversation, Message } from "@/lib/chat-store";
 import { buildRequestHistory, loadChatSettings, saveChatSettings, shouldSendOnKey } from "@/lib/chat-settings";
 import { adjacentConversationId, getAppShortcut, matchesSaveOnlyShortcut } from "@/lib/keyboard-shortcuts";
+import { loadGeneralSettings, resolveTheme, saveGeneralSettings } from "@/lib/general-settings";
 import "./App.css";
+import "./theme.css";
 
 const MessageResponse = lazy(() =>
   import("@/components/ai-elements/message").then((module) => ({ default: module.MessageResponse })),
@@ -41,11 +43,14 @@ function withoutEmptyAssistantMessages(conversations: Conversation[]): Conversat
 }
 
 function App() {
+  const [generalPreferences, setGeneralPreferences] = useState(loadGeneralSettings);
+  const generalSettings = generalPreferences.settings;
   const [chatPreferences, setChatPreferences] = useState(loadChatSettings);
   const chatSettings = chatPreferences.settings;
   const [initialChatState] = useState(() => {
     const state = loadChatState();
-    return { ...state, conversations: withoutEmptyAssistantMessages(state.conversations) };
+    return { ...state, activeConversationId: generalSettings.startup === "new-chat" ? null : state.activeConversationId,
+      conversations: withoutEmptyAssistantMessages(state.conversations) };
   });
   const [conversations, setConversations] = useState<Conversation[]>(initialChatState.conversations);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(initialChatState.activeConversationId);
@@ -83,7 +88,7 @@ function App() {
   const [chatError, setChatError] = useState("");
   const [conversationErrors, setConversationErrors] = useState<Record<string, string>>({});
   const [storageError, setStorageError] = useState("");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(generalSettings.sidebar === "expanded");
   const [replyingId, setReplyingId] = useState<string | null>(null);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const [stoppingRequestId, setStoppingRequestId] = useState<string | null>(null);
@@ -122,7 +127,18 @@ function App() {
       : editableFailedMessage?.status === "failed"
         ? "回复失败，可编辑问题后重试。"
         : "";
-  const visibleError = chatError || conversationError || recoveryNotice || chatPreferences.error || storageError;
+  const visibleError = chatError || conversationError || recoveryNotice || chatPreferences.error || generalPreferences.error || storageError;
+
+  useLayoutEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => {
+      document.documentElement.classList.toggle("dark", resolveTheme(generalSettings.theme, media.matches) === "dark");
+      document.documentElement.dataset.animations = String(generalSettings.animations);
+    };
+    apply();
+    if (generalSettings.theme === "system") media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, [generalSettings.theme, generalSettings.animations]);
 
   const refreshSkills = useCallback(async () => {
     if (!isDesktop) return;
@@ -287,6 +303,36 @@ function App() {
     setKeyDraft("");
     setConnectionNotice("");
     setConnectionCenterOpen(false);
+  };
+
+  const storeManagedChats = (state: ChatState) => {
+    if (activeRequestRef.current) throw new Error("请结束生成后再管理聊天数据。");
+    try { saveChatState(state); } catch { throw new Error("无法保存聊天数据，请检查存储空间；现有会话尚未改变。"); }
+    if (saveTimerRef.current !== null) { window.clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
+    pendingSaveRef.current = state;
+    setConversations(state.conversations); setActiveConversationId(state.activeConversationId);
+    setStorageError("");
+  };
+  const exportChats = () => {
+    if (activeRequestRef.current) throw new Error("请结束生成后再导出聊天。");
+    const content = serializeChatBackup({ conversations, activeConversationId });
+    const url = URL.createObjectURL(new Blob([content], { type: "application/json;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url; anchor.download = `ModelPort-chats-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+    document.body.append(anchor);
+    try { anchor.click(); } finally { anchor.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 60000); }
+  };
+  const importChats = (imported: readonly Conversation[]) => {
+    const copies = mergeImportedChats([], imported).map(conversation => ({ ...conversation,
+      skill: skills.some(skill => skill.enabled && skill.id === conversation.skill?.id) ? conversation.skill : undefined,
+      knowledge: knowledgeBases.some(base => base.enabled && base.id === conversation.knowledge?.id) ? conversation.knowledge : undefined }));
+    storeManagedChats({ conversations: withoutEmptyAssistantMessages([...copies, ...conversations]), activeConversationId });
+  };
+  const clearChats = () => {
+    storeManagedChats({ conversations: [], activeConversationId: null });
+    setSelectedModel(modelChoices.find(model => model.provider === "ollama" && model.id) ?? defaultModels[0]);
+    setDraft(""); setDraftSkill(undefined); setDraftKnowledge(undefined); setMode("chat");
+    setConversationErrors({}); setChatError("");
   };
 
   const openSettings = (section: SettingsSectionId = "account") => {
@@ -648,7 +694,7 @@ function App() {
             <button aria-label="设置" onClick={() => openSettings()} type="button"><Icon name="settings" /><span>设置</span></button>
             <button onClick={() => setConnectionCenterOpen(true)} type="button"><Icon name="providers" /><span>模型连接</span>{!configuredKeys.openai && !configuredKeys.deepseek && <span className="status-dot" />}</button>
             <button disabled title="帮助中心正在开发" type="button"><Icon name="help" /><span>帮助</span></button>
-            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.6.0）</span></button>
+            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.7.0）</span></button>
           </nav>
         </footer>
       </aside>
@@ -835,6 +881,14 @@ function App() {
           chatSettings={chatSettings}
           chatSettingsError={chatPreferences.error}
           onSaveChatSettings={settings => setChatPreferences({ settings: saveChatSettings(settings), error: "" })}
+          generalSettings={generalSettings}
+          generalSettingsError={generalPreferences.error}
+          onSaveGeneralSettings={settings => setGeneralPreferences({ settings: saveGeneralSettings(settings), error: "" })}
+          chatData={conversations}
+          chatBusy={replying}
+          onExportChats={exportChats}
+          onImportChats={importChats}
+          onClearChats={clearChats}
         />
       )}
       {searchOpen && <ConversationSearchDialog conversations={conversations} onClose={() => setSearchOpen(false)} onSelect={id => {

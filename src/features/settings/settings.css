@@ -61,10 +61,18 @@
 .chat-settings-actions { position: sticky; z-index: 1; bottom: -26px; display: flex; align-items: center; flex-wrap: wrap; gap: 9px; padding: 16px 0 20px; background: #fff; border-top: 1px solid #edf0f3; }
 .chat-settings-actions span { margin-right: auto; color: #87919a; font-size: 12px; }
 .chat-settings-actions button { padding: 9px 14px; border: 1px solid #dce6f0; border-radius: 9px; color: #267dcc; background: #edf5ff; font: inherit; font-size: 13px; cursor: pointer; }
-.chat-settings-actions .chat-settings-save, .chat-settings-actions .keyboard-settings-save { border-color: #1684f8; color: #fff; background: #1684f8; }
+.chat-settings-actions .chat-settings-save, .chat-settings-actions .keyboard-settings-save, .chat-settings-actions .general-settings-save { border-color: #1684f8; color: #fff; background: #1684f8; }
 .chat-settings-actions button:disabled { opacity: 0.5; cursor: default; }
 
 .keyboard-shortcut-list { border-top: 1px solid #e1e6eb; }
+.general-toggle { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 18px; color: #53616d; font-size: 13px; }
+.general-toggle input { width: 18px; height: 18px; accent-color: #1684f8; cursor: pointer; }
+.general-data-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 14px; }
+.general-data-actions button { padding: 9px 12px; border: 1px solid #dce6f0; border-radius: 9px; color: #267dcc; background: #edf5ff; font-size: 12px; cursor: pointer; }
+.general-data-actions button:hover:not(:disabled) { background: #e0eeff; }
+.general-data-actions button:disabled { opacity: 0.5; cursor: default; }
+.general-data-actions button.general-danger { color: #a04b41; border-color: #ecd6d2; background: #fff4f2; }
+.general-import-preview { margin-top: 16px; padding: 14px; border: 1px solid #dce6f0; border-radius: 10px; background: #f8fbff; overflow-wrap: anywhere; font-size: 13px; }
 .keyboard-shortcut-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 58px; padding: 10px 2px; border-bottom: 1px solid #e1e6eb; color: #48525d; font-size: 15px; }
 .keyboard-shortcut-row select { width: 225px; max-width: 48%; height: 40px; padding: 0 18px; border: 1px solid #d7dfe8; border-radius: 24px; color: #53616e; background: #fff; font: 600 14px Consolas, monospace; }
 .keyboard-shortcut-row select:focus-visible { outline: 2px solid rgba(22, 132, 248, 0.55); outline-offset: 2px; }
