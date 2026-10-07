@@ -1,3 +1,4 @@
+use crate::github_skills::{GitHubOrigin, document_hash};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -31,6 +32,7 @@ pub struct SkillSummary {
     pub enabled: bool,
     pub source: String,
     pub compatibility: Option<String>,
+    pub github: Option<GitHubOrigin>,
 }
 
 #[derive(Serialize)]
@@ -48,6 +50,8 @@ struct StoredSkill {
     display_name: String,
     enabled: bool,
     source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    github: Option<GitHubOrigin>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -68,7 +72,7 @@ struct Frontmatter {
 
 #[derive(Serialize)]
 pub struct SkillPreview {
-    name: String,
+    pub(crate) name: String,
     description: String,
     compatibility: Option<String>,
     body: String,
@@ -78,7 +82,7 @@ pub struct SkillStore {
     root: PathBuf,
 }
 
-fn parse_document(document: &str) -> Result<SkillPreview, String> {
+pub(crate) fn parse_document(document: &str) -> Result<SkillPreview, String> {
     if document.len() > MAX_DOCUMENT {
         return Err("技能文件不能超过 128 KiB。".into());
     }
@@ -159,6 +163,9 @@ impl StoredSkill {
         uuid::Uuid::parse_str(&self.id).map_err(|_| "技能库标识损坏，原始数据不会被覆盖。")?;
         validate_label(&self.display_name)?;
         validate_label(&self.source)?;
+        if let Some(origin) = &self.github {
+            origin.validate()?;
+        }
         let parsed = parse_document(&self.document)?;
         let mut hash = Sha256::new();
         hash.update(self.display_name.as_bytes());
@@ -171,8 +178,17 @@ impl StoredSkill {
             description: parsed.description,
             revision: format!("{:x}", hash.finalize()),
             enabled: self.enabled,
-            source: self.source.clone(),
+            source: if self
+                .github
+                .as_ref()
+                .is_some_and(|origin| origin.document_hash != document_hash(&self.document))
+            {
+                "GitHub 安装 · 本地已编辑".into()
+            } else {
+                self.source.clone()
+            },
             compatibility: parsed.compatibility,
+            github: self.github.clone(),
         })
     }
     fn record(&self) -> Result<SkillRecord, String> {
@@ -308,6 +324,45 @@ impl SkillStore {
         display_name: String,
         imported: bool,
     ) -> Result<SkillRecord, String> {
+        self.save_with_origin(
+            id,
+            expected_revision,
+            document,
+            display_name,
+            imported,
+            None,
+        )
+    }
+    pub(crate) fn save_from_github(
+        &self,
+        id: Option<String>,
+        expected_revision: Option<String>,
+        document: String,
+        display_name: String,
+        origin: GitHubOrigin,
+    ) -> Result<SkillRecord, String> {
+        origin.validate()?;
+        if origin.document_hash != document_hash(&document) {
+            return Err("GitHub 预览内容不一致。".into());
+        }
+        self.save_with_origin(
+            id,
+            expected_revision,
+            document,
+            display_name,
+            true,
+            Some(origin),
+        )
+    }
+    fn save_with_origin(
+        &self,
+        id: Option<String>,
+        expected_revision: Option<String>,
+        document: String,
+        display_name: String,
+        imported: bool,
+        github: Option<GitHubOrigin>,
+    ) -> Result<SkillRecord, String> {
         let parsed = parse_document(&document)?;
         validate_label(&display_name)?;
         let _lock = self.lock()?;
@@ -332,7 +387,13 @@ impl SkillStore {
             existing.display_name = display_name.trim().into();
             if imported {
                 existing.enabled = false;
-                existing.source = "导入 SKILL.md".into();
+                existing.source = if github.is_some() {
+                    "GitHub 安装"
+                } else {
+                    "导入 SKILL.md"
+                }
+                .into();
+                existing.github = github;
             }
             existing.record()?
         } else {
@@ -341,12 +402,15 @@ impl SkillStore {
                 document,
                 display_name: display_name.trim().into(),
                 enabled: false,
-                source: if imported {
+                source: if github.is_some() {
+                    "GitHub 安装"
+                } else if imported {
                     "导入 SKILL.md"
                 } else {
                     "本地创建"
                 }
                 .into(),
+                github,
             };
             let record = skill.record()?;
             library.skills.push(skill);
@@ -541,6 +605,99 @@ mod tests {
                     revision: "x".into()
                 })
                 .is_err()
+        );
+    }
+    #[test]
+    fn github_installs_preserve_provenance_and_require_reapproval() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SkillStore::new(dir.path().into());
+        let text = document("github-test", "First");
+        let origin = GitHubOrigin {
+            repository: "owner/repo".into(),
+            path: "skills/test/SKILL.md".into(),
+            commit: "a".repeat(40),
+            document_hash: document_hash(&text),
+        };
+        let first = store
+            .save_from_github(
+                None,
+                None,
+                text.clone(),
+                "Github test".into(),
+                origin.clone(),
+            )
+            .unwrap();
+        assert!(!first.summary.enabled);
+        assert_eq!(first.summary.github.as_ref().unwrap().commit, origin.commit);
+        let old = reference(&first);
+        store.set_enabled(&old, true).unwrap();
+        let edited = store
+            .save(
+                Some(old.id.clone()),
+                Some(old.revision.clone()),
+                document("github-test", "Edited"),
+                "Github test".into(),
+                false,
+            )
+            .unwrap();
+        assert!(edited.summary.source.contains("本地已编辑"));
+        assert!(edited.summary.github.is_some());
+        assert!(
+            store
+                .save_from_github(
+                    Some(old.id.clone()),
+                    Some(old.revision),
+                    text.clone(),
+                    "Github test".into(),
+                    origin.clone()
+                )
+                .is_err()
+        );
+        let installed = store
+            .save_from_github(
+                Some(old.id.clone()),
+                Some(edited.summary.revision),
+                text.clone(),
+                "Github test".into(),
+                origin.clone(),
+            )
+            .unwrap();
+        assert!(!installed.summary.enabled);
+        assert_eq!(installed.summary.id, old.id);
+        let reopened = SkillStore::new(dir.path().into()).get(&old.id).unwrap();
+        assert_eq!(
+            reopened.summary.github.unwrap().document_hash,
+            origin.document_hash
+        );
+        assert!(
+            store
+                .save_from_github(
+                    None,
+                    None,
+                    document("different", "changed"),
+                    "test".into(),
+                    origin
+                )
+                .is_err()
+        );
+        assert_eq!(store.get(&old.id).unwrap().document, text);
+    }
+    #[test]
+    fn old_library_without_github_metadata_remains_readable() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SkillStore::new(dir.path().into());
+        let record = store
+            .save(None, None, document("old", "text"), "旧技能".into(), false)
+            .unwrap();
+        let text = fs::read_to_string(store.path()).unwrap();
+        assert!(!text.contains("github"));
+        assert!(
+            store
+                .get(&record.summary.id)
+                .unwrap()
+                .summary
+                .github
+                .is_none()
         );
     }
 }

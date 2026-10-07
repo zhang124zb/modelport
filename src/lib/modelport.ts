@@ -17,11 +17,13 @@ export type ChatTurn = {
 
 export type SkillReference = { id: string; revision: string };
 export type SelectedSkill = SkillReference & { name: string };
+export type GitHubOrigin = { repository: string; path: string; commit: string; documentHash: string };
 export type SkillSummary = SkillReference & {
-  name: string; displayName: string; description: string; enabled: boolean; source: string; compatibility: string | null;
+  name: string; displayName: string; description: string; enabled: boolean; source: string; compatibility: string | null; github: GitHubOrigin | null;
 };
 export type SkillRecord = { summary: SkillSummary; document: string };
 export type SkillPreview = { name: string; description: string; compatibility: string | null; body: string };
+export type GitHubSkillPreview = { origin: GitHubOrigin; document: string; preview: SkillPreview };
 export type SkillSettingsProps = {
   skills: readonly SkillSummary[]; skillsLoading: boolean; skillsError: string; onSkillsChanged: () => Promise<void>;
 };
@@ -78,6 +80,10 @@ export const modelport = {
   cancelChat: (requestId: string) => invoke<void>("cancel_chat", { requestId }),
   listSkills: () => invoke<SkillSummary[]>("list_skills"),
   previewSkill: (document: string) => invoke<SkillPreview>("preview_skill", { document }),
+  previewGitHubSkill: (repository: string, gitRef: string, path: string) =>
+    invoke<GitHubSkillPreview>("preview_github_skill", { repository, gitRef, path }),
+  installGitHubSkill: (origin: GitHubOrigin, displayName: string, id: string | null = null, expectedRevision: string | null = null) =>
+    invoke<SkillRecord>("install_github_skill", { origin, displayName, id, expectedRevision }),
   getSkill: (id: string) => invoke<SkillRecord>("get_skill", { id }),
   saveSkill: (document: string, displayName: string, imported: boolean, id: string | null = null, expectedRevision: string | null = null) =>
     invoke<SkillRecord>("save_skill", { document, displayName, imported, id, expectedRevision }),

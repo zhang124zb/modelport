@@ -1,4 +1,5 @@
 mod connection;
+mod github_skills;
 mod skills;
 use tauri::Manager;
 
@@ -27,6 +28,8 @@ pub fn run() {
             skills::save_skill,
             skills::set_skill_enabled,
             skills::remove_skill,
+            github_skills::preview_github_skill,
+            github_skills::install_github_skill,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

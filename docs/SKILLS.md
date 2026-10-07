@@ -1,6 +1,6 @@
 # Skills 使用与开发
 
-ModelPort 0.3.0 支持指令型技能。它把选中技能的任务指导交给当前模型，不提供脚本执行或文件操作能力。
+ModelPort 0.3.1 支持指令型技能和公开 GitHub 仓库安装。它把选中技能的任务指导交给当前模型，不提供脚本执行或文件操作能力。
 
 ## 使用方法
 
@@ -12,6 +12,18 @@ ModelPort 0.3.0 支持指令型技能。它把选中技能的任务指导交给�
 每个会话最多选一个技能，新对话默认无技能。历史消息显示当时选用的名称和内容版本；这不是模型必然遵循所有指令的保证。特别是较小的本地模型可能模仿旧回复，更换技能时建议新建对话。
 
 已绑定技能修改后，发送前会提示确认新版；原消息标记不更改。禁用或删除技能会清除已打开应用中对应会话的选择，不删除聊天记录。其他应用实例的状态可能尚未刷新，但原生层会拒绝过期、已禁用或已删除的引用。编辑后重试使用当前技能配置，不承诺旧版指令的完整重放。
+
+## 从 GitHub 安装
+
+1. 在“设置 → Skills”点击“从 GitHub 安装”。
+2. 填写仓库首页地址（`https://github.com/作者/仓库`）或 `作者/仓库`；不要填 `blob` / `tree` 文件链接。
+3. 分支可留空使用默认分支，也可填写分支、标签或提交；文件路径填写仓库内相对路径，例如 `skills/translation/SKILL.md`，根目录文件使用 `SKILL.md`。
+4. 点击“获取安装预览”，检查原文、兼容要求和来源提交；必要时修改显示名称。安装前原文只读，安装后可本地编辑。
+5. 点击“安装技能”。同名项目先确认替换；新装和替换均默认禁用，审阅启用后才能在聊天中选择。
+
+仅支持公开 GitHub.com 仓库，不需要 Git、GitHub 登录或访问令牌。不会克隆整个仓库、下载压缩包、访问关联资源或执行脚本；需要这些能力的上游技能可能只能部分生效。不做自动更新，需要新版本时重新获取预览并确认替换。来源和固定提交保存到本地库，本地编辑会标记“本地已编辑”。
+
+预览通过 [GitHub 提交接口](https://docs.github.com/en/rest/commits/commits#list-commits) 解析默认/指定分支的提交，再通过 [内容接口的原文模式](https://docs.github.com/en/rest/repos/contents#get-repository-content) 获取该提交的单个文本文件；安装再次获取同一提交并核对 SHA-256。网络操作不持有技能库锁。只访问固定 HTTPS `api.github.com` 域名，不跟随重定向、不携带模型 API Key、不跳过证书校验；网络请求有超时，响应逐块限制大小。GitHub 访问受限时明确报错，原数据不动，可下载 `SKILL.md` 后本地导入。
 
 ## 格式与边界
 
@@ -42,7 +54,9 @@ ModelPort 0.3.0 支持指令型技能。它把选中技能的任务指导交给�
 - `src/App.tsx`：技能库摘要、会话选择、聊天入口、版本更新确认和禁用后的选择清理。
 - `src/lib/modelport.ts`：数据类型和 Tauri 调用。
 - `src/lib/chat-store.ts`：可选会话/消息技能标记，兼容旧记录。
-- `src-tauri/src/skills.rs`：受限 YAML 解析、技能库读写和引用解析。
+- `src-tauri/src/skills.rs`：受限 YAML 解析、技能库读写、GitHub 来源保存和引用解析。
+- `src-tauri/src/github_skills.rs`：仓库/路径校验、固定域名联网下载、固定提交预览和安装。
+- `src/features/settings/GitHubSkillInstaller.tsx`：公开仓库地址、分支及文件路径表单；复用 Skills 页的审阅、确认及退出保护。
 - `src-tauri/src/connection.rs`：普通/流式请求共用的技能注入逻辑。
 
 原生命令：
@@ -51,6 +65,8 @@ ModelPort 0.3.0 支持指令型技能。它把选中技能的任务指导交给�
 - `list_skills()`、`get_skill(id)`：摘要列表和原文详情。
 - `save_skill(id?, expectedRevision?, document, displayName, imported)`：新建/编辑/导入复用一次受保护保存；更新必须提供预期版本。
 - `set_skill_enabled(skill, enabled)`、`remove_skill(skill)`：校验版本后更改状态或删除。
+- `preview_github_skill(repository, gitRef, path)`：只读联网预览，返回 `document`、`preview` 和 `origin: { repository, path, commit, documentHash }`。
+- `install_github_skill(origin, displayName, id?, expectedRevision?)`：重取固定提交、复核摘要、受保护安装；替换必须提供当前技能版本。前端不能提交待安装原文或任意下载地址。
 
 `SettingsPageProps` 增加 `skills`、`skillsLoading`、`skillsError`、`onSkillsChanged`，用于共享技能摘要和刷新状态。原有分类映射方式保持不变。
 
@@ -59,7 +75,9 @@ ModelPort 0.3.0 支持指令型技能。它把选中技能的任务指导交给�
 - `cargo test --manifest-path src-tauri/Cargo.toml --lib`：解析、损坏库保护、CRUD、旧版本拒绝、无技能兼容和请求注入。
 - `node scripts/verify-skills.mjs <调试端口> [截图路径]`：真实桌面 UI、文件输入、启用/禁用、版本确认、会话恢复、Ollama 实际回复、小窗口和未保存保护。
 - `node scripts/verify-desktop.mjs <调试端口>`：原有设置分类、模型连接、遮罩及默认 Ollama 回归。
+- `node scripts/verify-github-skills.mjs <调试端口> [截图路径]`：公开 GitHub 实际下载、预览、安装、来源恢复、同名替换、默认禁用、失败不写入及小窗口布局。
+- `cargo test --locked --manifest-path src-tauri/Cargo.toml --lib live_public_repository_preview -- --ignored`：显式运行只读的公开仓库联网测试；默认离线测试跳过这一项。
 
 桌面脚本必须针对使用独立 `WEBVIEW2_USER_DATA_FOLDER` 且开启本机调试端口的测试实例运行；它会拒绝已有聊天的配置，结束后移除本次创建的技能并恢复原测试聊天状态，不修改预先存在的技能。调试端口只用于测试，不是普通启动方式。云端付费请求没有自动测试。
 
-后续仍待实现：自动激活、多技能叠加、关联资源读取、工具执行、市场与远程安装。增加这些能力时应单独设计授权与执行隔离，不放宽本模块的文本边界。
+后续仍待实现：私有仓库认证、自动更新、自动激活、多技能叠加、关联资源读取、工具执行与技能市场。增加这些能力时应单独设计授权与执行隔离，不放宽本模块的文本边界。

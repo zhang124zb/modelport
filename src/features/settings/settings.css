@@ -82,8 +82,16 @@
 .skills-start > .icon { color: #1684f8; }
 .skills-start h4 { margin: 0; font-size: 16px; }
 .skills-start p { margin: 0; color: #87919a; font-size: 12px; line-height: 1.8; }
+.skills-github { display: grid; gap: 13px; min-width: 0; padding: 18px; border: 1px solid #d9e8fc; border-radius: 14px; background: #f8fbff; }
+.skills-github h4 { margin: 0; font-size: 15px; }
+.skills-github p, .skills-github small { margin: 0; color: #7c8791; font-size: 12px; line-height: 1.7; }
+.skills-github label { display: grid; gap: 7px; min-width: 0; color: #65717d; font-size: 12px; }
+.skills-github-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.skills-github > button { justify-self: start; }
+.skills-github-origin { display: grid; gap: 6px; min-width: 0; padding: 12px; border-radius: 9px; background: #f3f7fb; color: #697d91; font-size: 11px; overflow-wrap: anywhere; }
+.skills-github-origin code { white-space: normal; }
 
-@media (max-width: 1100px) { .skills-layout { grid-template-columns: 1fr; } .skills-list { max-height: 165px; } }
+@media (max-width: 1100px) { .skills-layout { grid-template-columns: 1fr; } .skills-list { max-height: 165px; } .skills-github-fields { grid-template-columns: 1fr; } }
 
 @media (max-width: 980px) {
   .settings-dialog { width: calc(100vw - 32px); }

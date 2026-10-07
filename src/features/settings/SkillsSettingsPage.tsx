@@ -3,10 +3,11 @@ import type { ChangeEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Icon } from "@/components/Icon";
 import { errorMessage, isDesktop, modelport } from "@/lib/modelport";
-import type { SkillPreview, SkillRecord } from "@/lib/modelport";
+import type { GitHubSkillPreview, SkillPreview, SkillRecord } from "@/lib/modelport";
 import type { SettingsPageProps } from "./pages";
+import { GitHubSkillInstaller } from "./GitHubSkillInstaller";
 
-type Editor = { id: string | null; revision: string | null; document: string; displayName: string; imported: boolean; baseline: string };
+type Editor = { id: string | null; revision: string | null; document: string; displayName: string; imported: boolean; baseline: string; github?: GitHubSkillPreview };
 const emptyDocument = "---\nname: my-skill\ndescription: \"\"\n---\n";
 const templates = [
   { name: "翻译助手", slug: "translation", description: "将用户提供的文字翻译为指定语言，保留原意和格式。", body: "先确认目标语言，未指定时先询问。保持人名、数字、术语和段落格式。仅输出译文；遇到歧义时附简短说明，不编造原文没有的信息。" },
@@ -26,6 +27,7 @@ export function SkillsSettingsPage({ skills, skillsLoading, skillsError, onSkill
   const [preview, setPreview] = useState<SkillPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [showGitHub, setShowGitHub] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const dirty = editor !== null && fingerprint(editor.document, editor.displayName) !== editor.baseline;
   const leaveState = useRef({ dirty, busy }); leaveState.current = { dirty, busy };
@@ -43,6 +45,7 @@ export function SkillsSettingsPage({ skills, skillsLoading, skillsError, onSkill
   const visible = skills.filter((skill) => (filter === "all" || skill.enabled === (filter === "enabled"))
     && `${skill.displayName} ${skill.name} ${skill.description}`.toLowerCase().includes(query.trim().toLowerCase()));
   const selected = skills.find((skill) => skill.id === editor?.id);
+  const origin = editor?.github?.origin ?? selected?.github;
 
   const changeEditor = (next: Editor) => { setEditor(next); setPreview(null); setNotice(""); };
   const create = (document = emptyDocument, displayName = "") => {
@@ -72,6 +75,15 @@ export function SkillsSettingsPage({ skills, skillsLoading, skillsError, onSkill
     try { setPreview(await modelport.previewSkill(editor.document)); setNotice("格式检查通过。仅支持指令正文，不执行脚本或读取关联文件。"); }
     catch (error) { setPreview(null); setNotice(errorMessage(error)); } finally { setBusy(false); }
   };
+  const downloadGitHub = async (repository: string, gitRef: string, path: string) => {
+    if (!canLeave()) return; setBusy(true); setNotice("");
+    try {
+      const github = await modelport.previewGitHubSkill(repository, gitRef, path);
+      changeEditor({ id: null, revision: null, document: github.document, displayName: github.preview.name, imported: true, baseline: "", github });
+      setPreview(github.preview);
+      setNotice("GitHub 预览已就绪。请审阅原文与兼容要求，再点击安装技能；安装后默认禁用。安装前原文不可修改，安装后可本地编辑。");
+    } catch (error) { setNotice(errorMessage(error)); } finally { setBusy(false); }
+  };
   const save = async () => {
     if (!editor) return; setBusy(true); setNotice("");
     try {
@@ -83,9 +95,11 @@ export function SkillsSettingsPage({ skills, skillsLoading, skillsError, onSkill
         if (!window.confirm(`已有“${conflict.displayName}”。确定用导入内容替换吗？替换后会禁用，需重新审阅启用。`)) return;
         id = conflict.id; revision = conflict.revision;
       }
-      const record = await modelport.saveSkill(editor.document, editor.displayName, editor.imported, id, revision);
+      const record = editor.github
+        ? await modelport.installGitHubSkill(editor.github.origin, editor.displayName, id, revision)
+        : await modelport.saveSkill(editor.document, editor.displayName, editor.imported, id, revision);
       setEditor(fromRecord(record)); setPreview(parsed); await onSkillsChanged();
-      setNotice(record.summary.enabled ? "技能已保存。已绑定的会话使用新版前会提示确认。" : "技能已保存，请审阅后启用，再到聊天区选择使用。");
+      setNotice(editor.github ? "技能已安装，默认禁用。请审阅后启用，再到聊天区选择使用。" : record.summary.enabled ? "技能已保存。已绑定的会话使用新版前会提示确认。" : "技能已保存，请审阅后启用，再到聊天区选择使用。");
     } catch (error) { setNotice(errorMessage(error)); } finally { setBusy(false); }
   };
   const toggle = async () => {
@@ -108,8 +122,10 @@ export function SkillsSettingsPage({ skills, skillsLoading, skillsError, onSkill
         <span>{skills.length} 个技能 · {skills.filter((skill) => skill.enabled).length} 个已启用</span>
         <button disabled={busy || !isDesktop || Boolean(skillsError)} onClick={() => create()} type="button"><Icon name="plus" size={17} />新建技能</button>
         <button disabled={busy || !isDesktop || Boolean(skillsError)} onClick={() => fileRef.current?.click()} type="button"><Icon name="file" size={17} />导入技能</button>
+        <button aria-expanded={showGitHub} disabled={busy || !isDesktop || Boolean(skillsError)} onClick={() => setShowGitHub(!showGitHub)} type="button"><Icon name="globe" size={17} />从 GitHub 安装</button>
         <input accept=".md" aria-label="导入 SKILL.md 文件" hidden onChange={(event) => void importFile(event)} ref={fileRef} type="file" />
       </div>
+      {showGitHub && <GitHubSkillInstaller busy={busy} onDownload={downloadGitHub} />}
       <p className="skills-boundary">仅使用 SKILL.md 指令正文；不会运行 scripts/、读取 references/ 或 assets/，也不会按 allowed-tools 授予权限。云端模型会收到选中技能的正文。更换技能建议新建对话，避免旧回复影响结果。</p>
       {skillsError && <div className="skills-notice" role="alert">{skillsError}<button disabled={busy} onClick={() => void onSkillsChanged()} type="button">重新读取</button></div>}
       {notice && <p className="skills-notice" role="status">{notice}</p>}
@@ -127,10 +143,11 @@ export function SkillsSettingsPage({ skills, skillsLoading, skillsError, onSkill
         </div>
         {editor ? <div className="skills-editor">
           <label>显示名称<input aria-label="技能显示名称" disabled={busy} maxLength={120} onChange={(event) => { setEditor({ ...editor, displayName: event.target.value }); }} value={editor.displayName} /></label>
-          <label>SKILL.md 原文<textarea aria-label="技能指令文件" disabled={busy} onChange={(event) => { setEditor({ ...editor, document: event.target.value }); setPreview(null); }} spellCheck={false} value={editor.document} /></label>
-          <small>{selected ? `${selected.source} · 版本 ${selected.revision.slice(0, 8)}` : editor.imported ? "导入预览 · 尚未保存" : "新建技能 · 尚未保存"}{dirty ? " · 有未保存修改" : ""}</small>
+          <label>SKILL.md 原文<textarea aria-label="技能指令文件" disabled={busy} readOnly={Boolean(editor.github)} onChange={(event) => { setEditor({ ...editor, document: event.target.value }); setPreview(null); }} spellCheck={false} value={editor.document} /></label>
+          <small>{selected ? `${selected.source} · 版本 ${selected.revision.slice(0, 8)}` : editor.github ? "GitHub 安装预览 · 尚未安装" : editor.imported ? "导入预览 · 尚未保存" : "新建技能 · 尚未保存"}{dirty ? " · 有未保存修改" : ""}</small>
+          {origin && <div aria-label="GitHub 技能来源" className="skills-github-origin"><strong>GitHub 来源</strong><span>{origin.repository}</span><span>{origin.path}</span><code>提交：{origin.commit}</code></div>}
           <div className="skills-editor-actions">
-            <button disabled={busy || Boolean(skillsError)} onClick={() => void save()} type="button">保存技能</button>
+            <button disabled={busy || Boolean(skillsError)} onClick={() => void save()} type="button">{editor.github ? "安装技能" : "保存技能"}</button>
             <button disabled={busy} onClick={() => void validate()} type="button">检查并预览</button>
             {selected && <><button disabled={busy || dirty} onClick={() => void toggle()} type="button">{selected.enabled ? "禁用技能" : "启用技能"}</button><button className="skills-delete" disabled={busy} onClick={() => void remove()} type="button">删除技能</button></>}
           </div>
