@@ -8,6 +8,8 @@ import { KnowledgeSettingsPage } from "./KnowledgeSettingsPage";
 import { ChatSettingsPage } from "./ChatSettingsPage";
 import { KeyboardShortcutsPage } from "./KeyboardShortcutsPage";
 import { GeneralSettingsPage } from "./GeneralSettingsPage";
+import { DefaultsSettingsPage } from "./DefaultsSettingsPage";
+import type { ModelDefaults } from "@/lib/model-defaults";
 import type { GeneralSettings } from "@/lib/general-settings";
 import type { Conversation } from "@/lib/chat-store";
 import type { ChatSettings } from "@/lib/chat-settings";
@@ -24,6 +26,9 @@ export type SettingsPageProps = SkillSettingsProps & KnowledgeSettingsProps & {
   generalSettings: GeneralSettings;
   generalSettingsError: string;
   onSaveGeneralSettings: (settings: GeneralSettings) => void;
+  modelDefaults: ModelDefaults;
+  modelDefaultsError: string;
+  onSaveModelDefaults: (settings: ModelDefaults) => void;
   chatData: readonly Conversation[];
   chatBusy: boolean;
   onExportChats: () => void;
@@ -75,32 +80,6 @@ function AccountSettingsPage(props: SettingsPageProps) {
 
 function ProvidersSettingsPage({ providerProps }: SettingsPageProps) {
   return <ProviderSettings {...providerProps} />;
-}
-
-function DefaultsSettingsPage({ currentModel, modelChoices }: SettingsPageProps) {
-  const localModel = modelChoices.find((model) => model.provider === "ollama" && model.id);
-  return (
-    <div className="settings-page">
-      <section className="settings-card">
-        <h4>新对话默认模型</h4>
-        <dl className="settings-details">
-          <div><dt>模型提供方</dt><dd>本机 Ollama</dd></div>
-          <div><dt>可用默认模型</dt><dd>{localModel?.name ?? "尚未发现本地模型"}</dd></div>
-        </dl>
-        <p>空白启动与新对话优先使用本机模型。可在“模型提供方”中获取已安装的模型。</p>
-      </section>
-      <section className="settings-card">
-        <h4>当前对话模型</h4>
-        <p className="settings-model-name">{currentModel.name}</p>
-        <p>已有对话沿用各自保存的模型，可在聊天输入框旁的模型菜单中切换。</p>
-      </section>
-      <section className="settings-card">
-        <h4>更多默认模型选项</h4>
-        <p>后续将在这里开放对话、搜索与文档等功能的默认模型配置。</p>
-        <span className="settings-availability">即将开放</span>
-      </section>
-    </div>
-  );
 }
 
 // Each section has a stable entry point. Replace only its component when ready.

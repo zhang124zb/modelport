@@ -3,7 +3,7 @@ import type { IconName } from "@/components/Icon";
 export const settingsSections = [
   { id: "account", label: "ModelPort账户", icon: "spark", description: "管理你的 ModelPort 账户与同步偏好。", plannedFields: ["账户登录", "个人资料", "同步偏好"] },
   { id: "providers", label: "模型提供方", icon: "providers", description: "连接云端 API 或本机 Ollama，管理模型与安全凭据。", plannedFields: [] },
-  { id: "defaults", label: "默认模型", icon: "cube", description: "查看新对话使用的默认模型。", plannedFields: [] },
+  { id: "defaults", label: "默认模型", icon: "cube", description: "选择并保存新对话使用的模型。", plannedFields: [] },
   { id: "web-search", label: "联网搜索", icon: "globe", description: "为对话配置搜索服务与信息来源。", plannedFields: ["搜索服务", "结果数量", "搜索触发方式"] },
   { id: "mcp", label: "MCP", icon: "mcp", description: "连接外部工具与 MCP 服务。", plannedFields: ["服务管理", "连接测试", "工具授权"] },
   { id: "knowledge", label: "知识库", icon: "book", description: "管理可用于对话的本地资料与知识库。", plannedFields: ["资料导入", "索引模型", "检索设置"] },

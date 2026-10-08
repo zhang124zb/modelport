@@ -2360,7 +2360,7 @@ dependencies = [
 
 [[package]]
 name = "modelport"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "futures-util",
  "keyring",

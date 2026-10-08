@@ -114,7 +114,12 @@ try {
   if (process.argv[3]) { const { data } = await command("Page.captureScreenshot", { format: "png" }); writeFileSync(process.argv[3], Buffer.from(data, "base64")); }
   await command("Emulation.clearDeviceMetricsOverride"); await closeSettings();
   await reload(); await trackRequests(); await fill(".composer textarea", "Follow the updated base instructions.");
-  await key("Enter", "Enter", 13); await waitReply("MODELPORT_CHAT_SETTINGS_UPDATED");
+  const assistantCountBeforeUpdate = await evaluate("document.querySelectorAll('.message.assistant').length");
+  await key("Enter", "Enter", 13); await waitFor("window.__chatSettingsRequests.length === 1");
+  // History contains the old marker: an LLM can repeat it despite the new system prompt.
+  // Verify a completed real reply here, then strictly inspect the updated prompt and context below.
+  await waitFor(`!document.querySelector('[aria-label="停止生成"]') && document.querySelectorAll('.message.assistant').length > ${assistantCountBeforeUpdate} && [...document.querySelectorAll('.message.assistant')].at(-1)?.textContent.trim()`, 900);
+  assert.ok(await evaluate("!document.querySelector('.chat-error')"));
   const updated = await evaluate("window.__chatSettingsRequests[0]"); assert.equal(updated.messages.length, 3); assert.equal(updated.systemPrompt, updatedPrompt);
   assert.equal(updated.messages[0].content, request.messages[0].content); assert.ok(updated.messages[1].content.includes("MODELPORT_CHAT_SETTINGS_VERIFIED"));
   await waitFor("!document.querySelector('.message-plain-text') && ![...document.querySelectorAll('.message.assistant')].at(-1)?.innerText.includes('正在排版回复')");

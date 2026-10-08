@@ -22,6 +22,8 @@ import type { ChatState, Conversation, Message } from "@/lib/chat-store";
 import { buildRequestHistory, loadChatSettings, saveChatSettings, shouldSendOnKey } from "@/lib/chat-settings";
 import { adjacentConversationId, getAppShortcut, matchesSaveOnlyShortcut } from "@/lib/keyboard-shortcuts";
 import { loadGeneralSettings, resolveTheme, saveGeneralSettings } from "@/lib/general-settings";
+import { loadModelDefaults, resolveDefaultModel, saveModelDefaults } from "@/lib/model-defaults";
+import type { ModelDefaults } from "@/lib/model-defaults";
 import "./App.css";
 import "./theme.css";
 
@@ -42,7 +44,14 @@ function withoutEmptyAssistantMessages(conversations: Conversation[]): Conversat
   }));
 }
 
+function pickDefaultModel(settings: ModelDefaults, choices: readonly ModelOption[]): ModelOption {
+  const reference = resolveDefaultModel(settings, choices);
+  return choices.find(model => model.provider === reference.provider && model.id === reference.id)
+    ?? (reference.id ? modelOption(reference.provider, reference.id) : defaultModels[0]);
+}
+
 function App() {
+  const [modelPreferences, setModelPreferences] = useState(loadModelDefaults);
   const [generalPreferences, setGeneralPreferences] = useState(loadGeneralSettings);
   const generalSettings = generalPreferences.settings;
   const [chatPreferences, setChatPreferences] = useState(loadChatSettings);
@@ -55,8 +64,8 @@ function App() {
   const [conversations, setConversations] = useState<Conversation[]>(initialChatState.conversations);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(initialChatState.activeConversationId);
   const [draft, setDraft] = useState("");
-  const [selectedModel, setSelectedModel] = useState<ModelOption>(
-    initialChatState.conversations.find((conversation) => conversation.id === initialChatState.activeConversationId)?.model ?? defaultModels[0],
+  const [selectedModel, setSelectedModel] = useState<ModelOption>(() =>
+    initialChatState.conversations.find((conversation) => conversation.id === initialChatState.activeConversationId)?.model ?? pickDefaultModel(modelPreferences.settings, defaultModels),
   );
   const [modelChoices, setModelChoices] = useState<ModelOption[]>(() => {
     const choices = [...defaultModels];
@@ -127,7 +136,7 @@ function App() {
       : editableFailedMessage?.status === "failed"
         ? "回复失败，可编辑问题后重试。"
         : "";
-  const visibleError = chatError || conversationError || recoveryNotice || chatPreferences.error || generalPreferences.error || storageError;
+  const visibleError = chatError || conversationError || recoveryNotice || chatPreferences.error || modelPreferences.error || generalPreferences.error || storageError;
 
   useLayoutEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -281,7 +290,7 @@ function App() {
     if (draft.trim() && !window.confirm("输入框有未发送内容，确定放弃并创建新对话吗？")) return;
     followBottomRef.current = true;
     setActiveConversationId(null);
-    setSelectedModel(modelChoices.find((model) => model.provider === "ollama" && model.id) ?? defaultModels[0]);
+    setSelectedModel(pickDefaultModel(modelPreferences.settings, modelChoices));
     setDraft("");
     setDraftSkill(undefined);
     setDraftKnowledge(undefined);
@@ -330,7 +339,7 @@ function App() {
   };
   const clearChats = () => {
     storeManagedChats({ conversations: [], activeConversationId: null });
-    setSelectedModel(modelChoices.find(model => model.provider === "ollama" && model.id) ?? defaultModels[0]);
+    setSelectedModel(pickDefaultModel(modelPreferences.settings, modelChoices));
     setDraft(""); setDraftSkill(undefined); setDraftKnowledge(undefined); setMode("chat");
     setConversationErrors({}); setChatError("");
   };
@@ -401,7 +410,7 @@ function App() {
         : ids;
       const discovered = filtered.slice(0, 100).map((id) => modelOption(selectedProvider, id));
       setModelChoices((current) => [...current.filter((model) => model.provider !== selectedProvider), ...discovered]);
-      if (selectedProvider === "ollama" && discovered.length > 0) setSelectedModel(discovered[0]);
+      if (selectedProvider === "ollama" && discovered.length > 0) setSelectedModel(current => current.provider === "ollama" && !current.id ? discovered[0] : current);
       setConnectionNotice(discovered.length === 0 ? "连接成功，但没有发现可用模型。" : `连接成功，发现 ${discovered.length} 个模型。`);
     } catch (error) {
       setConnectionNotice(errorMessage(error));
@@ -418,6 +427,7 @@ function App() {
       setChatError("真实模型请求仅能在 ModelPort 桌面应用中使用。");
       return;
     }
+    if (generateReply && modelPreferences.error && !activeConversationId) { openSettings("defaults"); return; }
     if (generateReply && chatPreferences.error) { openSettings("chat"); return; }
     if (generateReply && selectedModel.provider === "ollama" && !selectedModel.id) {
       setSelectedProvider("ollama");
@@ -694,7 +704,7 @@ function App() {
             <button aria-label="设置" onClick={() => openSettings()} type="button"><Icon name="settings" /><span>设置</span></button>
             <button onClick={() => setConnectionCenterOpen(true)} type="button"><Icon name="providers" /><span>模型连接</span>{!configuredKeys.openai && !configuredKeys.deepseek && <span className="status-dot" />}</button>
             <button disabled title="帮助中心正在开发" type="button"><Icon name="help" /><span>帮助</span></button>
-            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.7.0）</span></button>
+            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.8.0）</span></button>
           </nav>
         </footer>
       </aside>
@@ -884,6 +894,15 @@ function App() {
           generalSettings={generalSettings}
           generalSettingsError={generalPreferences.error}
           onSaveGeneralSettings={settings => setGeneralPreferences({ settings: saveGeneralSettings(settings), error: "" })}
+          modelDefaults={modelPreferences.settings}
+          modelDefaultsError={modelPreferences.error}
+          onSaveModelDefaults={settings => {
+            const saved = saveModelDefaults(settings);
+            setModelPreferences({ settings: saved, error: "" });
+            if (!activeConversationId && mode === "chat" && !activeRequestRef.current) {
+              setSelectedModel(pickDefaultModel(saved, modelChoices)); setChatError("");
+            }
+          }}
           chatData={conversations}
           chatBusy={replying}
           onExportChats={exportChats}

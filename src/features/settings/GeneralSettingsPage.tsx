@@ -44,7 +44,7 @@ export function GeneralSettingsPage({ generalSettings, generalSettingsError, onS
     <section className="settings-card"><h4>启动行为</h4>
       <label className="chat-settings-field" htmlFor="general-startup"><span>打开软件时</span><select id="general-startup" value={draft.startup} onChange={event => change({ startup: event.target.value as GeneralSettings["startup"] })}><option value="last-conversation">恢复上次打开的会话</option><option value="new-chat">显示空白新对话</option></select></label>
       <label className="chat-settings-field" htmlFor="general-sidebar"><span>启动时侧栏</span><select id="general-sidebar" value={draft.sidebar} onChange={event => change({ sidebar: event.target.value as GeneralSettings["sidebar"] })}><option value="expanded">展开</option><option value="collapsed">收起</option></select></label>
-      <p>空白新对话仍默认使用本机 Ollama，不会删除旧记录。仅控制应用打开后的界面，不注册 Windows 开机启动。</p>
+      <p>空白新对话使用“默认模型”中保存的选择；未设置时使用本机 Ollama。不会删除旧记录，也不注册 Windows 开机启动。</p>
     </section>
     <section className="settings-card"><h4>聊天数据</h4><p>本机共有 {chatData.length} 个会话、{messageCount} 条消息。JSON 备份未加密，含聊天和历史来源片段；不含 API Key、设置、技能正文或知识库原文件。请妥善保管。</p>
       <div className="general-data-actions">

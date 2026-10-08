@@ -11,6 +11,7 @@
 - `src/features/settings/ChatSettingsPage.tsx`、`src/lib/chat-settings.ts`：对话偏好表单、保存与输入 / 展示 / 上下文逻辑。
 - `src/features/settings/KeyboardShortcutsPage.tsx`、`src/lib/keyboard-shortcuts.ts`：发送方式表单、固定组合和主界面按键判定；沿用对话偏好存储以保留旧发送配置。
 - `src/features/settings/GeneralSettingsPage.tsx`、`src/lib/general-settings.ts`、`src/theme.css`：常规配置、主题和启动偏好；`src/lib/chat-store.ts` 包含聊天备份校验与副本合并。
+- `src/features/settings/DefaultsSettingsPage.tsx`、`src/lib/model-defaults.ts`：默认聊天模型选择、独立持久化和统一默认引用解析。
 - `src/components/ConnectionModal.tsx`：可复用的 `ProviderSettings` 与 `ProviderSettingsProps`，供设置页和原来的模型连接弹窗共同使用。
 
 ## 分类 ID
@@ -19,7 +20,7 @@
 | --- | --- | --- |
 | `account` | ModelPort账户 | 账户功能预留页 |
 | `providers` | 模型提供方 | 已接入现有凭据管理、连接测试和模型发现 |
-| `defaults` | 默认模型 | 查看默认本地模型和当前对话模型；修改默认策略待开放 |
+| `defaults` | 默认模型 | 选择并保存新对话默认模型；支持当前 OpenAI、DeepSeek 与具体 Ollama 模型 |
 | `web-search` | 联网搜索 | 搜索服务与搜索策略预留页 |
 | `mcp` | MCP | 服务配置、连接测试与工具授权预留页 |
 | `knowledge` | 知识库 | 已接入 TXT / Markdown 导入、分段、检索测试、启用 / 禁用与资料管理 |
@@ -44,12 +45,13 @@
 - `knowledgeBases`、`knowledgeLoading`、`knowledgeError`、`onKnowledgeChanged`：知识库摘要与刷新状态。
 - `chatSettings`、`chatSettingsError`、`onSaveChatSettings`：已保存对话配置、读取警告与保存回调；失败时不改变生效值。
 - `generalSettings`、`generalSettingsError`、`onSaveGeneralSettings`：独立常规配置、读取警告与保存回调。
+- `modelDefaults`、`modelDefaultsError`、`onSaveModelDefaults`：独立默认模型选择、读取警告与保存回调；不包含凭据，历史会话和当前请求不改写。
 - `chatData`、`chatBusy`、`onExportChats`、`onImportChats`、`onClearChats`：聊天统计、生成保护与数据管理回调；仅作用于聊天，不调用原生资料库 / 凭据写入。
 - `onRegisterLeaveGuard`：可选的表单退出确认，用于阻止未保存技能被误关闭。
 
 页面组件在模块顶层声明。开发某一项时，将该项在 `settingsPageComponents` 中的值替换为新组件即可；不需要修改主聊天界面或其他分类。公共导航保持不变，页面自己的表单状态放在对应组件中。
 
-目前“模型提供方”、“Skills”、“知识库”、“对话设置”、“键盘快捷键”和“常规设置”执行实际操作；用法和接口见 [Skills 使用与开发](./SKILLS.md)、[知识库使用与开发](./KNOWLEDGE.md)、[对话设置](./CHAT_SETTINGS.md)、[键盘快捷键](./KEYBOARD_SHORTCUTS.md) 和 [常规设置](./GENERAL_SETTINGS.md)。其他未开放分类保留规划说明，不发送未实现的后端命令，不写入虚假的账户或配置状态。
+目前“模型提供方”、“默认模型”、“Skills”、“知识库”、“对话设置”、“键盘快捷键”和“常规设置”执行实际操作；用法和接口见 [默认模型](./DEFAULT_MODELS.md)、[Skills 使用与开发](./SKILLS.md)、[知识库使用与开发](./KNOWLEDGE.md)、[对话设置](./CHAT_SETTINGS.md)、[键盘快捷键](./KEYBOARD_SHORTCUTS.md) 和 [常规设置](./GENERAL_SETTINGS.md)。其他未开放分类保留规划说明，不发送未实现的后端命令，不写入虚假的账户或配置状态。
 
 常规设置后续扩展沿用 `settingsPageComponents.general` 和独立 v1 存储。实际字段仅在功能实现时增加；需原生能力时再扩展页面参数和权限，不提前写入无效开关。
 
