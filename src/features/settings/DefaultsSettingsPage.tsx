@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { defaultModelSettings } from "@/lib/model-defaults";
 import type { ModelReference } from "@/lib/model-defaults";
-import { errorMessage, modelOption, providerDetails } from "@/lib/modelport";
+import { errorMessage, modelOption, providerInfo } from "@/lib/modelport";
+import { isCustomProvider } from "@/lib/providers";
 import type { SettingsPageProps } from "./pages";
 import { useSettingsLeaveGuard } from "./useSettingsLeaveGuard";
 
@@ -13,13 +14,13 @@ export function DefaultsSettingsPage({ currentModel, modelChoices, providerProps
   const choices = modelChoices.filter(model => model.id);
   if (draft && !choices.some(model => model.provider === draft.provider && model.id === draft.id)) choices.push(modelOption(draft.provider, draft.id));
   const unavailable = Boolean(draft && !modelChoices.some(model => model.provider === draft.provider && model.id === draft.id));
-  const needsKey = draft && draft.provider !== "ollama" && !providerProps.configuredKeys[draft.provider];
+  const needsKey = draft && draft.provider !== "ollama" && !isCustomProvider(draft.provider) && !providerProps.configuredKeys[draft.provider];
   return <form className="settings-page defaults-settings-page" onSubmit={event => {
     event.preventDefault();
     try { onSaveModelDefaults({ chatModel: draft }); setNotice("默认模型已保存，用于空白窗口、新对话及后续启动；已有对话和正在生成的请求不改变。"); }
     catch (error) { setNotice(errorMessage(error)); }
   }}>
-    <p className="chat-settings-summary">选择你希望新对话使用的模型，可选本机 Ollama、OpenAI 或 DeepSeek。保存选择不会发送聊天或修改 API Key。</p>
+    <p className="chat-settings-summary">选择新对话使用的模型，支持本机 Ollama、各家云端服务及自定义提供商。保存选择不会发送聊天或修改 API Key。</p>
     {(notice || modelDefaultsError) && <p className="chat-settings-notice" role="status">{notice || modelDefaultsError}</p>}
     <section className="settings-card"><h4>新对话默认模型</h4>
       <label className="chat-settings-field" htmlFor="default-chat-model"><span>模型</span>
@@ -28,11 +29,11 @@ export function DefaultsSettingsPage({ currentModel, modelChoices, providerProps
           setDraft(selected ? { provider: selected.provider, id: selected.id } : null); setNotice("");
         }} value={draft ? `${draft.provider}:${draft.id}` : "auto"}>
           <option value="auto">自动选择本机 Ollama 的首个可用模型</option>
-          {(["ollama", "openai", "deepseek"] as const).map(provider => <optgroup key={provider} label={providerDetails[provider].name}>{choices.filter(model => model.provider === provider).map(model => <option key={model.id} value={`${provider}:${model.id}`}>{model.name}</option>)}</optgroup>)}
+          {[...new Set([...providerProps.configs.map(config => config.id), ...choices.map(model => model.provider)])].map(provider => <optgroup key={provider} label={providerInfo(provider, providerProps.configs).name}>{choices.filter(model => model.provider === provider).map(model => <option key={model.id} value={`${provider}:${model.id}`}>{model.name}</option>)}</optgroup>)}
         </select>
       </label>
       <p>列表沿用已知模型。需要更多模型时，请先在“模型提供方”中配置连接并点击“测试连接”，再回到这里选择。</p>
-      {needsKey && <p role="status">{providerDetails[draft.provider].name} 尚未配置 API Key；可以保存选择，发送前仍需在“模型提供方”配置凭据。</p>}
+      {needsKey && <p role="status">{providerInfo(draft.provider, providerProps.configs).name} 尚未配置 API Key；可以保存选择，发送前仍需在“模型提供方”配置凭据。</p>}
       {unavailable && <p role="status">该选择未出现在当前模型列表中，仍按原选择保留。请测试连接并确认模型可用；不会自动改用另一家服务。</p>}
       <p>不设置时兼容原来的本机自动选择策略。默认模型仅影响空白新对话，不改写已有聊天的模型、技能或知识库。</p>
     </section>

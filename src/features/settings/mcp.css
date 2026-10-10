@@ -1,0 +1,74 @@
+.mcp-page { display: grid; gap: 16px; }
+.mcp-security { display: flex; align-items: start; gap: 11px; padding: 14px; border: 1px solid #efd5a5; border-radius: 12px; color: #825a23; background: #fff9eb; }
+.mcp-security > .icon { flex: 0 0 auto; margin-top: 1px; }
+.mcp-security strong { font-size: 13px; line-height: 1.6; }
+.mcp-security p { margin: 6px 0 0; font-size: 12px; line-height: 1.8; }
+.mcp-notice { margin: 0; padding: 12px 14px; border: 1px solid #dce6f0; border-radius: 10px; color: #42617e; background: #f8fbff; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.mcp-notice.is-error { color: #97483b; border-color: #ecd6d2; background: #fff4f2; }
+.mcp-layout { display: grid; grid-template-columns: 174px minmax(0, 1fr); gap: 18px; align-items: start; }
+.mcp-sidebar { display: grid; gap: 12px; min-width: 0; }
+.mcp-sidebar > p { margin: 0; color: #7c8791; font-size: 12px; line-height: 1.8; }
+.mcp-server-list { display: grid; gap: 8px; max-height: 430px; overflow-y: auto; }
+.mcp-page button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 9px 12px; border: 1px solid #dce6f0; border-radius: 9px; background: #edf5ff; color: #267dcc; font: inherit; font-size: 12px; cursor: pointer; }
+.mcp-page button:hover:not(:disabled) { background: #e0eeff; }
+.mcp-page button:disabled, .mcp-approval-dialog button:disabled { opacity: .5; cursor: default; }
+.mcp-page button:focus-visible, .mcp-page input:focus-visible, .mcp-page summary:focus-visible, .mcp-approval-dialog button:focus-visible { outline: 3px solid #8ebcff; outline-offset: 3px; }
+.mcp-server-list button { display: grid; justify-content: stretch; gap: 6px; width: 100%; text-align: left; background: #fff; color: #53616d; overflow-wrap: anywhere; }
+.mcp-server-list button.is-active { border-color: #9ecafa; background: #f1f7ff; }
+.mcp-server-list strong { font-size: 13px; }
+.mcp-server-list small, .mcp-server-list span { color: #7c8791; font-size: 10px; line-height: 1.6; }
+.mcp-editor, .mcp-editor form { display: grid; gap: 14px; min-width: 0; }
+.mcp-editor-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.mcp-editor h4 { margin: 0; font-size: 15px; }
+.mcp-editor h4 small { margin-left: 6px; color: #7c8791; font-size: 10px; font-weight: 400; }
+.mcp-editor label { display: grid; gap: 7px; min-width: 0; color: #53616d; font-size: 12px; }
+.mcp-editor input:not([type=checkbox]), .mcp-editor select { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid #dce3e9; border-radius: 9px; color: #3d4852; background: #fff; font: inherit; }
+.mcp-editor :is(input, select):disabled { background: #f5f7f9; color: #87919a; }
+.mcp-hint { margin: 0; color: #7c8791; font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
+.mcp-inline-error { margin: 0; color: #a04b41; font-size: 12px; line-height: 1.7; }
+.mcp-editor .mcp-enable, .mcp-editor .mcp-tool-toggle { display: flex; align-items: start; gap: 10px; }
+.mcp-editor input[type=checkbox] { flex: 0 0 auto; width: 17px; height: 17px; margin: 1px 0 0; accent-color: #1684f8; }
+.mcp-enable span { line-height: 1.6; }
+.mcp-enable small { display: block; margin-top: 3px; color: #7c8791; font-size: 11px; }
+.mcp-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.mcp-page button.mcp-primary { color: #fff; background: #1684f8; border-color: #1684f8; }
+.mcp-page button.mcp-primary:hover:not(:disabled) { background: #0874e6; }
+.mcp-page button.mcp-danger { color: #a04b41; border-color: #ecd6d2; background: #fff4f2; }
+.mcp-token, .mcp-tools { display: grid; gap: 13px; padding: 15px; border: 1px solid #e3e9ef; border-radius: 12px; min-width: 0; }
+.mcp-local-warning { margin: 0; padding: 10px 12px; border-radius: 9px; color: #825a23; background: #fff6e5; font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
+.mcp-tool { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid #e3e9ef; min-width: 0; }
+.mcp-tool p { margin: 0; color: #697683; font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mcp-tool strong { overflow-wrap: anywhere; }
+.mcp-tool summary { color: #697683; font-size: 11px; cursor: pointer; }
+.mcp-tool pre, .mcp-approval-arguments pre { max-height: 260px; margin: 10px 0 0; padding: 12px; border: 1px solid #e3e9ef; border-radius: 9px; color: #3d4852; background: #f7f9fb; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.8 Consolas, monospace; }
+.mcp-coming { padding: 14px; border-radius: 10px; background: #f4f7fa; }
+.mcp-coming h4 { font-size: 12px; }
+.mcp-coming p { margin: 7px 0 0; color: #7c8791; font-size: 11px; line-height: 1.8; }
+.mcp-approval-dialog { position: fixed; inset: 0; width: min(650px, calc(100vw - 48px)); max-width: none; max-height: calc(100vh - 48px); margin: auto; padding: 25px; border: 1px solid #dce2e8; border-radius: 19px; color: #30363d; background: #fff; box-shadow: 0 25px 80px #18202640; overflow-y: auto; }
+.mcp-approval-dialog[open] { display: grid; gap: 17px; }
+.mcp-approval-dialog::backdrop { background: #151b2166; backdrop-filter: blur(4px); }
+.mcp-approval-dialog > header { display: flex; align-items: start; justify-content: space-between; gap: 14px; }
+.mcp-approval-eyebrow { color: #a06b2f; font-size: 11px; }
+.mcp-approval-dialog h2 { margin: 8px 0 0; font-size: 21px; }
+.mcp-approval-details { display: grid; gap: 10px; margin: 0; font-size: 12px; }
+.mcp-approval-details > div { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 12px; }
+.mcp-approval-details dt { color: #7c8791; }
+.mcp-approval-details dd { margin: 0; color: #3d4852; overflow-wrap: anywhere; }
+.mcp-approval-details small { display: block; margin-top: 4px; color: #7c8791; font-size: 11px; }
+.mcp-approval-destination { margin: 0; padding: 11px 13px; border: 1px solid #dce6f0; border-radius: 9px; color: #42617e; background: #f8fbff; font-size: 12px; line-height: 1.8; }
+.mcp-approval-arguments { min-width: 0; }
+.mcp-approval-arguments h3 { margin: 0; font-size: 13px; }
+.mcp-approval-dialog footer { display: flex; justify-content: end; flex-wrap: wrap; gap: 10px; }
+.mcp-approval-dialog footer button { padding: 11px 17px; border: 1px solid #dce2e8; border-radius: 9px; font: inherit; font-size: 13px; cursor: pointer; }
+.mcp-deny { color: #48525d; background: #f4f6f8; }
+.mcp-allow { color: #fff; background: #a46421; border-color: #a46421 !important; }
+.mcp-tool-trace { margin: 12px 0; padding: 12px 14px; border: 1px solid #dce6f0; border-radius: 10px; color: #53616d; background: #f8fbff; font-size: 12px; }
+.mcp-tool-trace > strong { display: flex; align-items: center; gap: 7px; }
+.mcp-tool-trace ul { list-style: none; padding: 0; margin: 10px 0; }
+.mcp-tool-trace li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; padding: 5px 0; overflow-wrap: anywhere; }
+.mcp-tool-trace li > small { color: #7c8791; }
+.mcp-tool-trace li > small[data-status=failed] { color: #a04b41; }
+.mcp-tool-trace li > p { flex: 0 0 100%; margin: 0; color: #7c8791; line-height: 1.7; }
+.mcp-tool-trace > small { color: #7c8791; font-size: 10px; }
+@media (max-width: 1100px) { .mcp-layout { grid-template-columns: 1fr; } .mcp-server-list { max-height: 160px; } }
+@media (prefers-color-scheme: dark) { .mcp-approval-dialog { color-scheme: light; } }

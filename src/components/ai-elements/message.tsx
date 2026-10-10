@@ -1,3 +1,5 @@
+// Copyright 2023 Vercel, Inc. SPDX-License-Identifier: Apache-2.0
+// Modified for ModelPort: adapted UI/helper imports; see THIRD_PARTY_NOTICES.md.
 "use client";
 
 import { Button } from "@/components/ui/button";

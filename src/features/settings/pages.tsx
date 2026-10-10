@@ -9,13 +9,15 @@ import { ChatSettingsPage } from "./ChatSettingsPage";
 import { KeyboardShortcutsPage } from "./KeyboardShortcutsPage";
 import { GeneralSettingsPage } from "./GeneralSettingsPage";
 import { DefaultsSettingsPage } from "./DefaultsSettingsPage";
+import { McpSettingsPage } from "./McpSettingsPage";
+import type { McpSettingsProps } from "@/lib/mcp";
 import type { ModelDefaults } from "@/lib/model-defaults";
 import type { GeneralSettings } from "@/lib/general-settings";
 import type { Conversation } from "@/lib/chat-store";
 import type { ChatSettings } from "@/lib/chat-settings";
 import type { SettingsSection, SettingsSectionId } from "./sections";
 
-export type SettingsPageProps = SkillSettingsProps & KnowledgeSettingsProps & {
+export type SettingsPageProps = SkillSettingsProps & KnowledgeSettingsProps & McpSettingsProps & {
   section: SettingsSection;
   currentModel: ModelOption;
   modelChoices: readonly ModelOption[];
@@ -34,6 +36,7 @@ export type SettingsPageProps = SkillSettingsProps & KnowledgeSettingsProps & {
   onExportChats: () => void;
   onImportChats: (conversations: readonly Conversation[]) => void;
   onClearChats: () => void;
+  onCleanAttachments: () => Promise<string>;
   onRegisterLeaveGuard?: (guard: (() => boolean) | null) => void;
 };
 
@@ -78,8 +81,8 @@ function AccountSettingsPage(props: SettingsPageProps) {
   );
 }
 
-function ProvidersSettingsPage({ providerProps }: SettingsPageProps) {
-  return <ProviderSettings {...providerProps} />;
+function ProvidersSettingsPage({ providerProps, onRegisterLeaveGuard }: SettingsPageProps) {
+  return <ProviderSettings {...providerProps} onRegisterLeaveGuard={onRegisterLeaveGuard} />;
 }
 
 // Each section has a stable entry point. Replace only its component when ready.
@@ -88,7 +91,7 @@ export const settingsPageComponents: Record<SettingsSectionId, ComponentType<Set
   providers: ProvidersSettingsPage,
   defaults: DefaultsSettingsPage,
   "web-search": PlannedSettingsPage,
-  mcp: PlannedSettingsPage,
+  mcp: McpSettingsPage,
   knowledge: KnowledgeSettingsPage,
   skills: SkillsSettingsPage,
   agents: PlannedSettingsPage,

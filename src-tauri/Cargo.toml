@@ -1,7 +1,8 @@
 [package]
 name = "modelport"
-version = "0.8.0"
+version = "0.11.0"
 description = "A local-first multi-model AI desktop client"
+license = "MIT"
 authors = ["ModelPort contributors"]
 edition = "2024"
 
@@ -24,12 +25,15 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 keyring = { version = "4.2", default-features = false, features = ["v1", "windows-native-keyring-store"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-tokio = { version = "1", features = ["sync", "time"] }
+tokio = { version = "1", features = ["sync", "time", "net"] }
 futures-util = "0.3"
 serde-saphyr = { version = "1.3", default-features = false, features = ["deserialize"] }
 sha2 = "0.10.9"
 tempfile = "3.27"
 uuid = { version = "1", features = ["v4"] }
+base64 = "0.22"
+png = "0.17"
+jsonschema = { version = "0.58.6", default-features = false }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

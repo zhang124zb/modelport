@@ -6,15 +6,24 @@ import type { ProviderSettingsProps } from "@/components/ConnectionModal";
 import { Icon } from "@/components/Icon";
 import { SettingsDialog } from "@/features/settings/SettingsDialog";
 import { ConversationSearchDialog } from "@/components/ConversationSearchDialog";
+import { AttachmentList, AttachmentMenu, AttachmentNotice } from "@/components/ChatAttachments";
+import { McpApprovalDialog, McpToolTrace } from "@/components/McpApprovalDialog";
+import { mcp } from "@/lib/mcp";
+import type { McpApproval, McpEvent, McpServer } from "@/lib/mcp";
+import type { McpSelection, ToolRound, ToolTrace } from "@/lib/mcp-history";
+import type { AttachmentNoticeData } from "@/components/ChatAttachments";
+import { attachmentIds, fileKind, maxAttachments, readAttachment } from "@/lib/attachments";
+import type { Attachment } from "@/lib/attachments";
 import {
   defaultModels,
   errorMessage,
   isDesktop,
   modelOption,
   modelport,
-  providerDetails,
+  providerInfo,
 } from "@/lib/modelport";
-import type { KnowledgeSummary, ModelOption, ProviderId, SelectedKnowledge, SelectedSkill, SkillSummary } from "@/lib/modelport";
+import type { KnowledgeSummary, ModelOption, ProviderConfig, ProviderId, SelectedKnowledge, SelectedSkill, SkillSummary } from "@/lib/modelport";
+import { defaultProviderConfigs, isCustomProvider } from "@/lib/providers";
 import { KnowledgeSources } from "@/components/KnowledgeSources";
 import type { SettingsSectionId } from "@/features/settings/sections";
 import { loadChatState, mergeImportedChats, saveChatState, serializeChatBackup } from "@/lib/chat-store";
@@ -40,7 +49,7 @@ type ActiveRequest = {
 function withoutEmptyAssistantMessages(conversations: Conversation[]): Conversation[] {
   return conversations.map((conversation) => ({
     ...conversation,
-    messages: conversation.messages.filter((message) => message.role !== "assistant" || message.content.length > 0),
+    messages: conversation.messages.filter((message) => message.role !== "assistant" || message.content.length > 0 || message.toolTrace?.length || message.toolRounds?.length),
   }));
 }
 
@@ -64,6 +73,9 @@ function App() {
   const [conversations, setConversations] = useState<Conversation[]>(initialChatState.conversations);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(initialChatState.activeConversationId);
   const [draft, setDraft] = useState("");
+  const [draftAttachments, setDraftAttachments] = useState<Attachment[]>([]);
+  const [attachmentBusy, setAttachmentBusy] = useState(false);
+  const [attachmentNotice, setAttachmentNotice] = useState<AttachmentNoticeData | null>(null);
   const [selectedModel, setSelectedModel] = useState<ModelOption>(() =>
     initialChatState.conversations.find((conversation) => conversation.id === initialChatState.activeConversationId)?.model ?? pickDefaultModel(modelPreferences.settings, defaultModels),
   );
@@ -89,8 +101,16 @@ function App() {
   const [knowledgeLoading, setKnowledgeLoading] = useState(isDesktop);
   const [knowledgeError, setKnowledgeError] = useState("");
   const [draftKnowledge, setDraftKnowledge] = useState<SelectedKnowledge | undefined>();
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  const [mcpLoading, setMcpLoading] = useState(isDesktop);
+  const [mcpError, setMcpError] = useState("");
+  const [draftMcp, setDraftMcp] = useState<McpSelection[]>([]);
+  const [pendingMcp, setPendingMcp] = useState<{ approval: McpApproval; modelName: string; providerName: string; cloudModel: boolean } | null>(null);
+  const [mcpDecisionBusy, setMcpDecisionBusy] = useState(false);
+  const [mcpDecisionError, setMcpDecisionError] = useState("");
   const [selectedProvider, setSelectedProvider] = useState<ProviderId>("ollama");
-  const [configuredKeys, setConfiguredKeys] = useState<Record<"openai" | "deepseek", boolean>>({ openai: false, deepseek: false });
+  const [providerConfigs, setProviderConfigs] = useState<ProviderConfig[]>(defaultProviderConfigs);
+  const [configuredKeys, setConfiguredKeys] = useState<Partial<Record<ProviderId, boolean>>>({});
   const [keyDraft, setKeyDraft] = useState("");
   const [connectionBusy, setConnectionBusy] = useState(false);
   const [connectionNotice, setConnectionNotice] = useState("");
@@ -104,6 +124,7 @@ function App() {
   const [mode, setMode] = useState<"chat" | "image">("chat");
 
   const activeRequestRef = useRef<ActiveRequest | null>(null);
+  const preparingAttachmentsRef = useRef(false);
   const canvasRef = useRef<HTMLElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const keyboardHandlerRef = useRef<(event: KeyboardEvent) => void>(() => {});
@@ -113,6 +134,8 @@ function App() {
   const persistedReplyingIdRef = useRef<string | null>(null);
   const skillsLoadRef = useRef(0);
   const knowledgeLoadRef = useRef(0);
+  const mcpLoadRef = useRef(0);
+  const mcpDecisionRef = useRef(false);
 
   const activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
   const messages = activeConversation?.messages ?? [];
@@ -122,6 +145,7 @@ function App() {
   const selectedKnowledge = activeConversation ? activeConversation.knowledge : draftKnowledge;
   const currentKnowledge = knowledgeBases.find(base => base.id === selectedKnowledge?.id && base.enabled);
   const knowledgeChanged = Boolean(selectedKnowledge && currentKnowledge && currentKnowledge.revision !== selectedKnowledge.revision);
+  const selectedMcp = activeConversation?.mcp ?? (activeConversation ? [] : draftMcp);
   const replying = replyingId !== null;
   const conversationError = activeConversationId ? conversationErrors[activeConversationId] : "";
   const lastMessage = messages[messages.length - 1];
@@ -195,13 +219,57 @@ function App() {
     setChatError("");
   };
 
+  const refreshMcp = useCallback(async () => {
+    if (!isDesktop) return;
+    const loadId = ++mcpLoadRef.current; setMcpLoading(true);
+    try {
+      const loaded = await mcp.listServers();
+      if (loadId !== mcpLoadRef.current) return;
+      setMcpServers(loaded); setMcpError("");
+      const enabled = new Set(loaded.filter(server => server.enabled).map(server => server.id));
+      setDraftMcp(current => current.filter(selection => enabled.has(selection.id)));
+      setConversations(current => current.map(conversation => ({ ...conversation, mcp: conversation.mcp?.filter(selection => enabled.has(selection.id)) })));
+    } catch (error) { if (loadId === mcpLoadRef.current) setMcpError(errorMessage(error)); }
+    finally { if (loadId === mcpLoadRef.current) setMcpLoading(false); }
+  }, []);
+  useEffect(() => { void refreshMcp(); return () => { ++mcpLoadRef.current; }; }, [refreshMcp]);
+  const toggleMcp = (server: McpServer) => {
+    if (activeRequestRef.current || attachmentBusy) return;
+    const removing = selectedMcp.some(selection => selection.id === server.id);
+    if (!removing && selectedMcp.length >= 3) { setChatError("每个对话最多选择 3 个 MCP 服务。"); return; }
+    if (!removing && !window.confirm(`将“${server.name}”的工具开放给本次对话？工具说明会发送给所选模型；每次实际执行仍需单独确认。服务返回内容可能含有恶意指令，请仅选择可信服务。`)) return;
+    const next = removing ? selectedMcp.filter(selection => selection.id !== server.id) : [...selectedMcp, { id: server.id, revision: server.revision }];
+    if (activeConversationId) setConversations(current => current.map(conversation => conversation.id === activeConversationId ? { ...conversation, mcp: next } : conversation));
+    else setDraftMcp(next);
+    setChatError("");
+  };
+  const decideMcp = async (allow: boolean) => {
+    if (!pendingMcp || mcpDecisionRef.current) return;
+    const approval = pendingMcp.approval;
+    if (activeRequestRef.current?.requestId !== approval.requestId) { setPendingMcp(null); return; }
+    mcpDecisionRef.current = true; setMcpDecisionBusy(true); setMcpDecisionError("");
+    try {
+      await mcp.decideTool(approval.requestId, approval.approvalId, allow);
+      setPendingMcp(current => current?.approval.approvalId === approval.approvalId ? null : current);
+    } catch (error) { setMcpDecisionError(`${errorMessage(error)} 未确认执行；可以关闭提示以拒绝，或等待超时。`); }
+    finally { mcpDecisionRef.current = false; setMcpDecisionBusy(false); }
+  };
+
   useEffect(() => {
     if (!isDesktop) return;
-    void Promise.all([
-      modelport.hasKey("openai"),
-      modelport.hasKey("deepseek"),
-    ]).then(([openai, deepseek]) => setConfiguredKeys({ openai, deepseek }))
-      .catch(() => setChatError("无法读取系统安全凭据库，请检查桌面应用权限。"));
+    let disposed = false;
+    void modelport.listProviders().then(async configs => {
+      const keys = await Promise.all(configs.filter(config => config.id !== "ollama").map(async config => [config.id, await modelport.hasKey(config.id)] as const));
+      if (disposed) return;
+      setProviderConfigs(configs); setConfiguredKeys(Object.fromEntries(keys));
+      setModelChoices(current => {
+        const local = current.filter(model => model.provider === "ollama" && model.id);
+        const discovered = [...local, ...configs.flatMap(config => config.models.filter(id => config.id !== "ollama" || !local.some(model => model.id === id)).map(id => modelOption(config.id, id)))];
+        const retained = current.filter(model => model.provider === "ollama" || initialChatState.conversations.some(conversation => conversation.model.provider === model.provider && conversation.model.id === model.id));
+        return [...discovered, ...retained.filter(model => !discovered.some(item => item.provider === model.provider && item.id === model.id))];
+      });
+    }).catch(error => { if (!disposed) setChatError(errorMessage(error)); });
+    return () => { disposed = true; };
   }, []);
 
   useEffect(() => {
@@ -277,6 +345,9 @@ function App() {
   };
 
   const selectConversation = (id: string) => {
+    if (preparingAttachmentsRef.current) return;
+    if (draftAttachments.length && !window.confirm("有未发送附件，切换会话会移除草稿附件，确定继续？")) return;
+    setDraftAttachments([]);
     const conversation = conversations.find((item) => item.id === id);
     if (conversation) setSelectedModel(conversation.model.provider === "ollama" && !conversation.model.id
       ? modelChoices.find(model => model.provider === "ollama" && model.id) ?? conversation.model : conversation.model);
@@ -287,23 +358,30 @@ function App() {
   };
 
   const startNewChat = () => {
-    if (draft.trim() && !window.confirm("输入框有未发送内容，确定放弃并创建新对话吗？")) return;
+    if (preparingAttachmentsRef.current) return;
+    if ((draft.trim() || draftAttachments.length) && !window.confirm("输入框有未发送内容或附件，确定放弃并创建新对话吗？")) return;
     followBottomRef.current = true;
     setActiveConversationId(null);
     setSelectedModel(pickDefaultModel(modelPreferences.settings, modelChoices));
     setDraft("");
+    setDraftAttachments([]);
     setDraftSkill(undefined);
     setDraftKnowledge(undefined);
+    setDraftMcp([]);
     setChatError("");
     setMode("chat");
   };
 
   const startImageChat = () => {
+    if (preparingAttachmentsRef.current) return;
+    if ((draft.trim() || draftAttachments.length) && !window.confirm("图像生成尚未开放，切换会丢弃草稿和附件，确定继续？")) return;
     followBottomRef.current = true;
     setActiveConversationId(null);
     setDraft("");
+    setDraftAttachments([]);
     setDraftSkill(undefined);
     setDraftKnowledge(undefined);
+    setDraftMcp([]);
     setChatError("图像生成接口尚未接入；目前先完成文本对话连接。");
     setMode("image");
   };
@@ -315,7 +393,7 @@ function App() {
   };
 
   const storeManagedChats = (state: ChatState) => {
-    if (activeRequestRef.current) throw new Error("请结束生成后再管理聊天数据。");
+    if (activeRequestRef.current || preparingAttachmentsRef.current) throw new Error("请结束生成或附件处理后再管理聊天数据。");
     try { saveChatState(state); } catch { throw new Error("无法保存聊天数据，请检查存储空间；现有会话尚未改变。"); }
     if (saveTimerRef.current !== null) { window.clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
     pendingSaveRef.current = state;
@@ -323,7 +401,7 @@ function App() {
     setStorageError("");
   };
   const exportChats = () => {
-    if (activeRequestRef.current) throw new Error("请结束生成后再导出聊天。");
+    if (activeRequestRef.current || preparingAttachmentsRef.current) throw new Error("请结束生成或附件处理后再导出聊天。");
     const content = serializeChatBackup({ conversations, activeConversationId });
     const url = URL.createObjectURL(new Blob([content], { type: "application/json;charset=utf-8" }));
     const anchor = document.createElement("a");
@@ -341,10 +419,13 @@ function App() {
     storeManagedChats({ conversations: [], activeConversationId: null });
     setSelectedModel(pickDefaultModel(modelPreferences.settings, modelChoices));
     setDraft(""); setDraftSkill(undefined); setDraftKnowledge(undefined); setMode("chat");
+    setDraftMcp([]);
+    setDraftAttachments([]);
     setConversationErrors({}); setChatError("");
   };
 
   const openSettings = (section: SettingsSectionId = "account") => {
+    if (preparingAttachmentsRef.current) return;
     setSearchOpen(false);
     closeConnectionCenter();
     setModelMenuOpen(false);
@@ -352,6 +433,7 @@ function App() {
     setSettingsSection(section);
     void refreshSkills();
     void refreshKnowledge();
+    void refreshMcp();
   };
 
   const closeSettings = () => {
@@ -387,13 +469,32 @@ function App() {
     try {
       await modelport.removeKey(selectedProvider);
       setConfiguredKeys((current) => ({ ...current, [selectedProvider]: false }));
-      setModelChoices((current) => current.filter((model) => model.provider !== selectedProvider || defaultModels.some((item) => item.id === model.id)));
       setConnectionNotice("已从系统安全凭据库删除该服务的 API Key。");
     } catch (error) {
       setConnectionNotice(errorMessage(error));
     } finally {
       setConnectionBusy(false);
     }
+  };
+
+  const saveProviderConfig = async (config: ProviderConfig) => {
+    const saved = await modelport.saveProvider(config);
+    setProviderConfigs(current => current.map(item => item.id === saved.id ? saved : item));
+    setModelChoices(current => [...current.filter(model => model.provider !== saved.id), ...saved.models.map(id => modelOption(saved.id, id)),
+      ...(saved.id === "ollama" && !saved.models.length ? [defaultModels[0]] : [])]);
+    return saved;
+  };
+  const addProviderConfig = async () => {
+    const added = await modelport.addProvider();
+    setProviderConfigs(current => [...current, added]); setSelectedProvider(added.id); setKeyDraft(""); setConnectionNotice("");
+  };
+  const removeProviderConfig = async () => {
+    const provider = selectedProvider;
+    await modelport.removeProvider(provider);
+    setProviderConfigs(current => current.filter(item => item.id !== provider));
+    setModelChoices(current => current.filter(model => model.provider !== provider));
+    setConfiguredKeys(current => { const updated = { ...current }; delete updated[provider]; return updated; });
+    setSelectedProvider("ollama"); setKeyDraft(""); setConnectionNotice("已删除自定义提供商及其密钥；聊天记录和原来的默认模型选择保留，需手动重新选择连接。");
   };
 
   const testConnection = async () => {
@@ -408,8 +509,12 @@ function App() {
       const filtered = selectedProvider === "openai"
         ? ids.filter((id) => /^(gpt-|o\d|chatgpt-)/.test(id))
         : ids;
-      const discovered = filtered.slice(0, 100).map((id) => modelOption(selectedProvider, id));
-      setModelChoices((current) => [...current.filter((model) => model.provider !== selectedProvider), ...discovered]);
+      const validIds = filtered.filter(id => id.trim() && new TextEncoder().encode(id).length <= 128 && !/[\u0000-\u001f\u007f-\u009f]/.test(id));
+      const config = providerConfigs.find(item => item.id === selectedProvider);
+      if (!config) throw new Error("提供商已删除，请重新选择。");
+      const models = [...new Set([...config.models, ...validIds])].slice(0, 100);
+      await saveProviderConfig({ ...config, models });
+      const discovered = validIds.slice(0, 100).map((id) => modelOption(selectedProvider, id));
       if (selectedProvider === "ollama" && discovered.length > 0) setSelectedModel(current => current.provider === "ollama" && !current.id ? discovered[0] : current);
       setConnectionNotice(discovered.length === 0 ? "连接成功，但没有发现可用模型。" : `连接成功，发现 ${discovered.length} 个模型。`);
     } catch (error) {
@@ -419,10 +524,50 @@ function App() {
     }
   };
 
+  const addAttachments = async (files: File[]) => {
+    if (!files.length || preparingAttachmentsRef.current || activeRequestRef.current || mode === "image") return;
+    if (!isDesktop) { setAttachmentNotice({ title: "请使用桌面应用", message: "附件保存和模型请求仅能在 ModelPort 桌面应用中使用。" }); return; }
+    if (files.length + draftAttachments.length > maxAttachments) { setAttachmentNotice({ title: "附件数量超出限制", message: "每条消息最多添加 4 个附件，请先移除部分附件。" }); return; }
+    preparingAttachmentsRef.current = true; setAttachmentBusy(true);
+    const saved: Attachment[] = [];
+    try {
+      const hasVideo = files.some(file => fileKind(file) === "video");
+      const hasImage = files.some(file => fileKind(file) === "image");
+      if (hasVideo || hasImage) {
+        if (!selectedModel.id) throw new Error("请先选择模型，再添加图片或视频；当前版本尚未接入视频识别。");
+        const capabilities = await modelport.modelCapabilities(selectedModel.provider, selectedModel.id);
+        if (hasVideo) throw new Error(selectedModel.provider === "ollama" && !capabilities.vision
+          ? `本地模型“${selectedModel.name}”不支持图片识别，也不能在本客户端用于视频识别。当前版本暂不支持视频，请改用截图并选择视觉模型。`
+          : "当前版本尚未接入视频识别；支持图片识别不等于已支持视频。请改用截图，视频未保存或发送。");
+        if (!capabilities.vision) throw new Error(`所选模型“${selectedModel.name}”不支持图片识别（或尚未确认其视觉能力）。请选择支持视觉的模型，或改为文字附件；不会自动切换模型。`);
+      }
+      for (const file of files) {
+        const input = await readAttachment(file);
+        saved.push(await modelport.saveAttachment(input.filename, input.kind, input.data));
+      }
+      setDraftAttachments(current => [...current, ...saved]); setChatError("");
+    } catch (error) {
+      if (saved.length) {
+        try { await modelport.removeAttachments(saved.map(item => item.id)); }
+        catch { /* Bounded store; explicit unused-attachment cleanup can recover abandoned imports. */ }
+      }
+      setAttachmentNotice({ title: "无法添加附件", message: errorMessage(error) });
+    } finally { preparingAttachmentsRef.current = false; setAttachmentBusy(false); }
+  };
+
+  const cleanAttachments = async (): Promise<string> => {
+    if (preparingAttachmentsRef.current || activeRequestRef.current) throw new Error("请结束生成或附件处理后再清理。");
+    preparingAttachmentsRef.current = true; setAttachmentBusy(true);
+    try {
+      const removed = await modelport.cleanUnusedAttachments(attachmentIds(conversations, draftAttachments));
+      return `已清理 ${removed} 个闲置附件副本，当前聊天和草稿引用的附件保留。原文件未修改。`;
+    } finally { preparingAttachmentsRef.current = false; setAttachmentBusy(false); }
+  };
+
   const sendMessage = async (event?: FormEvent, generateReply = true) => {
     event?.preventDefault();
-    const content = draft.trim();
-    if (!content || activeRequestRef.current || mode === "image") return;
+    const content = draft.trim() || (draftAttachments.length ? "请分析这些附件。" : "");
+    if (!content || activeRequestRef.current || preparingAttachmentsRef.current || mode === "image" || attachmentNotice) return;
     if (!isDesktop) {
       setChatError("真实模型请求仅能在 ModelPort 桌面应用中使用。");
       return;
@@ -435,13 +580,28 @@ function App() {
       setChatError("请启动本机 Ollama 并安装模型，然后在模型连接中获取模型列表。");
       return;
     }
-    if (generateReply && selectedModel.provider !== "ollama" && !configuredKeys[selectedModel.provider]) {
+    if (generateReply && selectedModel.provider !== "ollama" && !isCustomProvider(selectedModel.provider) && !configuredKeys[selectedModel.provider]) {
       setSelectedProvider(selectedModel.provider);
       setConnectionCenterOpen(true);
-      setChatError(`请先配置 ${providerDetails[selectedModel.provider].name} 的 API Key。`);
+      setChatError(`请先配置 ${providerInfo(selectedModel.provider, providerConfigs).name} 的 API Key。`);
       return;
     }
 
+    let history = buildRequestHistory(activeConversation?.newTopicPending ? [] : messages.map(message => message.mcpModel
+      && (message.mcpModel.provider !== selectedModel.provider || message.mcpModel.id !== selectedModel.id)
+      ? { ...message, toolRounds: undefined, reasoningContent: undefined, thinking: undefined } : message), content, chatSettings.contextTurns, draftAttachments);
+    const requestMcp = [...selectedMcp];
+    if (generateReply && requestMcp.length) {
+      if (mcpLoading || mcpError) { setChatError(mcpError || "MCP 服务正在读取，请稍后发送。"); return; }
+      if (selectedModel.provider === "anthropic") { setChatError("MCP 首版尚未适配 Claude 原生工具调用，请关闭工具或选择支持工具调用的 Ollama / OpenAI 兼容模型。"); return; }
+      if (requestMcp.some(selection => !mcpServers.some(server => server.enabled && server.id === selection.id && server.revision === selection.revision))) {
+        setChatError("MCP 服务配置或凭据已改变，请取消勾选后重新选择确认；本次尚未发送。"); return;
+      }
+    }
+    // With tools off, preserve prior answers without forwarding the raw tool data.
+    if (!requestMcp.length) history = history.map(({ role, content, attachments }) => ({ role, content, attachments }));
+    if (generateReply && selectedModel.provider !== "ollama" && history.some(message => message.toolRounds?.length)
+      && !window.confirm(`历史工具结果将作为上下文发送给 ${providerInfo(selectedModel.provider, providerConfigs).name}。这些结果可能包含私人资料；不会重新执行历史工具。确认继续？`)) return;
     let requestSkill = selectedSkill;
     if (generateReply && requestSkill) {
       if (skillsLoading || skillsError) { setChatError(skillsError || "技能库正在读取，请稍后发送。"); return; }
@@ -461,29 +621,39 @@ function App() {
         if (!window.confirm(`“${currentKnowledge.name}”已更新，确认使用新版资料？可先到知识库设置审阅。`)) return;
         requestKnowledge = { id: currentKnowledge.id, revision: currentKnowledge.revision, name: currentKnowledge.name }; selectKnowledge(currentKnowledge);
       }
-      if (selectedModel.provider !== "ollama" && !window.confirm(`本次将把“${requestKnowledge.name}”命中的最多 4 个资料片段发送给 ${providerDetails[selectedModel.provider].name}。确认继续？未命中时不会发送模型请求。`)) return;
+      if (selectedModel.provider !== "ollama" && !window.confirm(`本次将把“${requestKnowledge.name}”命中的最多 4 个资料片段发送给 ${providerInfo(selectedModel.provider, providerConfigs).name}。确认继续？${history.some(message => message.attachments?.length) ? "未命中时仍会处理已附加文件。" : "未命中时不会发送模型请求。"}`)) return;
+    }
+
+    if (generateReply && history.some(message => message.attachments?.length)) {
+      preparingAttachmentsRef.current = true; setAttachmentBusy(true);
+      try {
+        await modelport.validateAttachments(selectedModel.provider, selectedModel.id, history);
+        if (selectedModel.provider !== "ollama" && !window.confirm(`本次会把所选附件及携带上下文中的附件内容发送给 ${providerInfo(selectedModel.provider, providerConfigs).name}，云端服务可能产生额外费用。确认发送？未选择的本地文件不会上传。`)) return;
+      } catch (error) {
+        setAttachmentNotice({ title: "附件未发送", message: errorMessage(error) }); return;
+      } finally { preparingAttachmentsRef.current = false; setAttachmentBusy(false); }
     }
 
     const conversationId = activeConversationId ?? crypto.randomUUID();
     const requestId = crypto.randomUUID();
     const assistantMessageId = crypto.randomUUID();
-    const nextMessage: Message = { id: crypto.randomUUID(), role: "user", content, status: generateReply ? "streaming" : undefined, savedOnly: generateReply ? undefined : true, topicStart: activeConversation?.newTopicPending, skill: requestSkill, knowledge: requestKnowledge };
+    const nextMessage: Message = { id: crypto.randomUUID(), role: "user", content, attachments: draftAttachments.length ? draftAttachments : undefined, status: generateReply ? "streaming" : undefined, savedOnly: generateReply ? undefined : true, topicStart: activeConversation?.newTopicPending, skill: requestSkill, knowledge: requestKnowledge };
     const pendingReply: Message = { id: assistantMessageId, role: "assistant", content: "", status: "streaming" };
     const newMessages = generateReply ? [nextMessage, pendingReply] : [nextMessage];
-    const history = buildRequestHistory(activeConversation?.newTopicPending ? [] : messages, content, chatSettings.contextTurns);
     if (generateReply) activeRequestRef.current = { requestId, conversationId, assistantMessageId };
     followBottomRef.current = true;
     setConversations((current) => {
       const existing = current.find((conversation) => conversation.id === conversationId);
       if (existing) {
         return current.map((conversation) => conversation.id === conversationId
-          ? { ...conversation, model: selectedModel, skill: requestSkill, knowledge: requestKnowledge, newTopicPending: undefined, messages: [...conversation.messages, ...newMessages] }
+          ? { ...conversation, model: selectedModel, skill: requestSkill, knowledge: requestKnowledge, mcp: requestMcp, newTopicPending: undefined, messages: [...conversation.messages, ...newMessages] }
           : conversation);
       }
-      return [{ id: conversationId, title: content.slice(0, 24), date: new Date().toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }), model: selectedModel, skill: requestSkill, knowledge: requestKnowledge, messages: newMessages }, ...current];
+      return [{ id: conversationId, title: content.slice(0, 24), date: new Date().toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }), model: selectedModel, skill: requestSkill, knowledge: requestKnowledge, mcp: requestMcp, messages: newMessages }, ...current];
     });
     setActiveConversationId(conversationId);
     setDraft("");
+    setDraftAttachments([]);
     setChatError("");
     setConversationErrors((current) => {
       const next = { ...current };
@@ -494,19 +664,25 @@ function App() {
     setReplyingId(conversationId);
     setStreamingMessageId(assistantMessageId);
     let receivedText = "";
+    let toolRounds: ToolRound[] | undefined;
+    let reasoningContent: string | undefined;
+    let thinking: string | undefined;
     const settleMessages = (status: Message["status"], assistantContent: string) => {
       setConversations((current) => current.map((conversation) => conversation.id === conversationId
         ? { ...conversation, messages: conversation.messages.flatMap((message): Message[] => {
           if (message.id === nextMessage.id) return [{ ...message, status }];
           if (message.id === assistantMessageId) {
-            return assistantContent ? [{ ...message, content: assistantContent, status }] : [];
+            return assistantContent || message.toolTrace?.length || toolRounds?.length
+              ? [{ ...message, content: assistantContent, status, toolRounds, reasoningContent, thinking,
+                mcpModel: requestMcp.length ? { provider: selectedModel.provider, id: selectedModel.id } : undefined,
+                toolTrace: message.toolTrace?.map(trace => ["pending", "running"].includes(trace.status) ? { ...trace, status: "interrupted" } : trace) }] : [];
           }
           return [message];
         }) }
         : conversation));
     };
     try {
-      const result = await modelport.streamChat(selectedModel.provider, selectedModel.id, history, requestId, (delta) => {
+      const onDelta = (delta: string) => {
         if (activeRequestRef.current?.requestId !== requestId || !delta) return;
         receivedText += delta;
         setConversations((current) => current.map((conversation) => conversation.id === conversationId
@@ -514,10 +690,31 @@ function App() {
             ? { ...message, content: message.content + delta }
             : message) }
           : conversation));
-      }, requestSkill ?? null, requestKnowledge ?? null, (retrieval) => {
+      };
+      const onSources = (retrieval: import("@/lib/modelport").KnowledgeContext) => {
         setConversations(current => current.map(conversation => conversation.id === conversationId
           ? { ...conversation, messages: conversation.messages.map(message => message.id === assistantMessageId ? { ...message, retrieval } : message) } : conversation));
-      }, chatSettings.systemPrompt);
+      };
+      const onMcpEvent = (event: McpEvent) => {
+        if (event.requestId !== requestId || activeRequestRef.current?.requestId !== requestId) return;
+        if (event.type === "approval") {
+          setMcpDecisionError("");
+          setPendingMcp({ approval: event, modelName: selectedModel.name,
+            providerName: providerInfo(selectedModel.provider, providerConfigs).name, cloudModel: selectedModel.provider !== "ollama" });
+        } else {
+          if (event.status !== "pending") setPendingMcp(current => current?.approval.approvalId === event.approvalId ? null : current);
+          const trace: ToolTrace = { approvalId: event.approvalId, serverName: event.serverName, toolName: event.toolName, status: event.status, summary: event.summary };
+          setConversations(current => current.map(conversation => conversation.id === conversationId
+            ? { ...conversation, messages: conversation.messages.map(message => message.id === assistantMessageId
+              ? { ...message, toolTrace: [...(message.toolTrace ?? []).filter(item => item.approvalId !== trace.approvalId), trace] } : message) } : conversation));
+        }
+      };
+      const result = requestMcp.length
+        ? await modelport.streamMcpChat(selectedModel.provider, selectedModel.id, history, requestId, onDelta, requestMcp, onMcpEvent,
+          requestSkill ?? null, requestKnowledge ?? null, onSources, chatSettings.systemPrompt)
+        : await modelport.streamChat(selectedModel.provider, selectedModel.id, history, requestId, onDelta,
+          requestSkill ?? null, requestKnowledge ?? null, onSources, chatSettings.systemPrompt);
+      toolRounds = result.toolRounds; reasoningContent = result.reasoningContent; thinking = result.thinking;
       settleMessages(result.status === "completed" && result.content
         ? undefined
         : result.status === "cancelled" ? "stopped" : "failed", result.content);
@@ -529,10 +726,12 @@ function App() {
       }
     } catch (error) {
       settleMessages("failed", receivedText);
+      if (history.some(message => message.attachments?.length)) setAttachmentNotice({ title: "附件请求未完成", message: errorMessage(error) });
       if (requestSkill) void refreshSkills();
       if (requestKnowledge) void refreshKnowledge();
       setConversationErrors((current) => ({ ...current, [conversationId]: errorMessage(error) }));
     } finally {
+      setPendingMcp(current => current?.approval.requestId === requestId ? null : current);
       if (activeRequestRef.current?.requestId === requestId) activeRequestRef.current = null;
       setReplyingId(null);
       setStreamingMessageId(null);
@@ -546,6 +745,7 @@ function App() {
     setStoppingRequestId(request.requestId);
     try {
       await modelport.cancelChat(request.requestId);
+      setPendingMcp(current => current?.approval.requestId === request.requestId ? null : current);
     } catch (error) {
       if (activeRequestRef.current?.requestId === request.requestId) {
         setStoppingRequestId(null);
@@ -557,13 +757,14 @@ function App() {
   const editAndRetry = () => {
     const conversationId = activeConversationId;
     const failedMessage = editableFailedMessage;
-    if (!conversationId || !failedMessage || activeRequestRef.current) return;
+    if (!conversationId || !failedMessage || activeRequestRef.current || preparingAttachmentsRef.current) return;
     const conversation = conversations.find((item) => item.id === conversationId);
     if (conversation?.messages[conversation.messages.length - 1]?.id !== failedMessage.id) return;
-    if (draft.trim() && draft !== failedMessage.content
+    if ((draftAttachments.length || draft.trim() && draft !== failedMessage.content)
       && !window.confirm("输入框已有未发送内容，确定改为编辑失败的问题吗？")) return;
 
     setDraft(failedMessage.content);
+    setDraftAttachments(failedMessage.attachments ?? []);
     setConversations((current) => current.flatMap((item) => {
       if (item.id !== conversationId) return [item];
       const remaining = item.messages.filter((message) => message.id !== failedMessage.id);
@@ -581,7 +782,7 @@ function App() {
 
   const focusComposer = () => window.requestAnimationFrame(() => textareaRef.current?.focus());
   const startNewTopic = () => {
-    if (activeRequestRef.current || mode === "image") return;
+    if (activeRequestRef.current || preparingAttachmentsRef.current || mode === "image") return;
     if (activeConversation?.messages.length) {
       setConversations(current => current.map(conversation => conversation.id === activeConversationId
         ? { ...conversation, newTopicPending: true } : conversation));
@@ -591,7 +792,7 @@ function App() {
   // A single listener reads the latest committed actions; settings modals keep their own keyboard behavior.
   useEffect(() => {
     keyboardHandlerRef.current = event => {
-      if (settingsOpen || connectionCenterOpen) return;
+      if (settingsOpen || connectionCenterOpen || attachmentNotice || preparingAttachmentsRef.current) return;
       const action = getAppShortcut(event);
       if (action === undefined || (searchOpen && action !== "toggle-search")) return;
       event.preventDefault();
@@ -626,19 +827,23 @@ function App() {
   };
 
   const providerSettingsProps: ProviderSettingsProps = {
+    configs: providerConfigs,
+    onSaveConfig: saveProviderConfig,
+    onAddProvider: addProviderConfig,
+    onDeleteProvider: removeProviderConfig,
     busy: connectionBusy,
     configuredKeys,
     keyDraft,
     notice: connectionNotice,
     onKeyDraftChange: setKeyDraft,
-    onRemove: () => void removeConnection(),
-    onSave: () => void saveConnection(),
+    onRemove: removeConnection,
+    onSave: saveConnection,
     onSelectProvider: (providerId) => {
       setSelectedProvider(providerId);
       setKeyDraft("");
       setConnectionNotice("");
     },
-    onTest: () => void testConnection(),
+    onTest: testConnection,
     selectedProvider,
   };
 
@@ -702,9 +907,9 @@ function App() {
           <nav aria-label="应用菜单" className="utility-nav">
             <button onClick={() => openSettings("knowledge")} type="button"><Icon name="library" /><span>我的资料</span></button>
             <button aria-label="设置" onClick={() => openSettings()} type="button"><Icon name="settings" /><span>设置</span></button>
-            <button onClick={() => setConnectionCenterOpen(true)} type="button"><Icon name="providers" /><span>模型连接</span>{!configuredKeys.openai && !configuredKeys.deepseek && <span className="status-dot" />}</button>
+            <button onClick={() => setConnectionCenterOpen(true)} type="button"><Icon name="providers" /><span>模型连接</span>{!Object.values(configuredKeys).some(Boolean) && <span className="status-dot" />}</button>
             <button disabled title="帮助中心正在开发" type="button"><Icon name="help" /><span>帮助</span></button>
-            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.8.0）</span></button>
+            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.11.0）</span></button>
           </nav>
         </footer>
       </aside>
@@ -755,10 +960,14 @@ function App() {
                           : <div className="message-plain-text">{message.content}</div>
                         : message.id === streamingMessageId && <div aria-label="正在生成回复" className="typing"><span /><span /><span /></div>
                       : message.content}
+                    {message.attachments?.length ? <AttachmentList attachments={message.attachments} onNotice={setAttachmentNotice} /> : null}
                     {message.skill && <span className="message-skill">选用技能：{message.skill.name} · {message.skill.revision.slice(0, 8)}</span>}
                     {message.knowledge && <span className="message-knowledge">选用知识库：{message.knowledge.name} · {message.knowledge.revision.slice(0, 8)}</span>}
                     {message.savedOnly && <span className="stream-note">仅保存，未生成回复</span>}
                     {message.role === "assistant" && message.retrieval && <KnowledgeSources context={message.retrieval} />}
+                    {message.toolTrace?.length ? <details className="mcp-chat-trace"><summary>工具记录 · {message.toolTrace.length} 次（不会自动重放）</summary>
+                      <McpToolTrace events={message.toolTrace} />
+                    </details> : null}
                     {message.role === "assistant" && message.status === "stopped" && <span className="stream-note">已停止生成</span>}
                     {message.role === "assistant" && message.status === "failed" && <span className="stream-note">生成失败</span>}
                     {message.role === "assistant" && message.status === "interrupted" && <span className="stream-note">生成中断</span>}
@@ -780,6 +989,8 @@ function App() {
             </div>
           )}
           <form className="composer" onSubmit={sendMessage}>
+            {draftAttachments.length > 0 && <AttachmentList attachments={draftAttachments} disabled={replying || attachmentBusy} onNotice={setAttachmentNotice} onRemove={id => setDraftAttachments(current => current.filter(item => item.id !== id))} />}
+            {attachmentBusy && <p className="attachment-status" role="status">正在处理附件并检查模型能力…</p>}
             <textarea
               aria-label="消息输入框"
               onChange={(event) => setDraft(event.target.value)}
@@ -793,7 +1004,7 @@ function App() {
                   void sendMessage(undefined, false);
                 }
               }}
-              disabled={mode === "image"}
+              disabled={mode === "image" || attachmentBusy}
               placeholder={mode === "image" ? "图像生成即将开放" : "在这里输入你的问题..."}
               ref={textareaRef}
               rows={2}
@@ -830,11 +1041,24 @@ function App() {
             </div>
             <div className="composer-toolbar">
               <div className="composer-tools">
-                <button aria-label="添加附件" disabled title="附件功能正在开发" type="button"><Icon name="plus" size={21} /></button>
+                <AttachmentMenu disabled={replying || attachmentBusy || mode === "image"} onFiles={files => void addAttachments(files)} />
                 <button aria-label="深度思考" disabled title="深度思考选项正在开发" type="button"><Icon name="brain" size={23} /></button>
                 <button className="mode-button" disabled type="button"><Icon name="robot" size={22} /><span>{mode === "image" ? "绘图模式" : "对话模式"}</span></button>
-                <button aria-label="添加文档" disabled title="文档功能正在开发" type="button"><Icon name="file" size={21} /></button>
                 <button aria-label="对话设置" onClick={() => openSettings("chat")} title="打开对话设置" type="button"><Icon name="sliders" size={22} /></button>
+                <details className="mcp-chat-picker">
+                  <summary aria-label="选择 MCP 工具服务" aria-disabled={replying || attachmentBusy || mode === "image"}><Icon name="mcp" size={22} /><span>工具{selectedMcp.length ? ` · ${selectedMcp.length}` : ""}</span></summary>
+                  <div className="mcp-chat-menu">
+                    <strong>当前对话的 MCP 工具</strong><p>默认不选服务；每次执行都需要确认。关闭所有服务后，只沿用之前的文字回答，不携带原始工具结果。</p>
+                    {mcpError && <p role="alert">{mcpError}</p>}
+                    {mcpLoading ? <p>正在读取…</p> : mcpServers.filter(server => server.enabled).map(server => {
+                      const selection = selectedMcp.find(item => item.id === server.id);
+                      return <label key={server.id}><input checked={!!selection} disabled={replying || attachmentBusy || mode === "image"} onChange={() => toggleMcp(server)} type="checkbox" />
+                        <span>{server.name}{selection && selection.revision !== server.revision ? "（已更新，需重新选择）" : ""}<small>{server.url}</small></span></label>;
+                    })}
+                    {!mcpLoading && !mcpServers.some(server => server.enabled) && <p>暂无启用服务，请到设置中添加并审阅。</p>}
+                    <button disabled={replying || attachmentBusy} onClick={() => openSettings("mcp")} type="button">管理 MCP 服务</button>
+                  </div>
+                </details>
               </div>
 
               <div className="composer-meta">
@@ -844,15 +1068,15 @@ function App() {
                     <div className="model-menu">
                       <div className="model-menu-title">选择模型</div>
                       {modelChoices.map((model) => (
-                        <button className={selectedModel.id === model.id && selectedModel.provider === model.provider ? "selected" : ""} key={`${model.provider}:${model.id}`} onClick={() => { setSelectedModel(model); if (activeConversationId) setConversations((current) => current.map((conversation) => conversation.id === activeConversationId ? { ...conversation, model } : conversation)); setModelMenuOpen(false); setMode("chat"); setChatError(""); }} type="button">
+                        <button disabled={attachmentBusy} className={selectedModel.id === model.id && selectedModel.provider === model.provider ? "selected" : ""} key={`${model.provider}:${model.id}`} onClick={() => { setSelectedModel(model); if (activeConversationId) setConversations((current) => current.map((conversation) => conversation.id === activeConversationId ? { ...conversation, model } : conversation)); setModelMenuOpen(false); setMode("chat"); setChatError(""); }} type="button">
                           <span className="model-logo" style={{ background: model.tone }}>{model.label}</span>
-                          <span><strong>{model.name}</strong><small>{providerDetails[model.provider].name}</small></span>
+                          <span><strong>{model.name}</strong><small>{providerInfo(model.provider, providerConfigs).name}</small></span>
                         </button>
                       ))}
                       <button className="manage-models" onClick={() => { setModelMenuOpen(false); setConnectionCenterOpen(true); }} type="button">管理模型连接</button>
                     </div>
                   )}
-                  <button className="model-trigger" onClick={() => setModelMenuOpen((open) => !open)} title={selectedModel.name} type="button">
+                  <button className="model-trigger" disabled={attachmentBusy} onClick={() => setModelMenuOpen((open) => !open)} title={selectedModel.name} type="button">
                     <span className="model-logo" style={{ background: selectedModel.tone }}>{selectedModel.label}</span>
                     <span>{selectedModel.name}</span>
                     <Icon name="chevron" size={18} />
@@ -861,7 +1085,7 @@ function App() {
                 {replying ? (
                   <button aria-label={stoppingRequestId ? "正在停止生成" : "停止生成"} className="send-button stop-button" disabled={stoppingRequestId !== null} onClick={() => void stopChat()} type="button"><span className="stop-symbol" /></button>
                 ) : (
-                  <button aria-label="发送消息" className="send-button" disabled={!draft.trim() || mode === "image"} type="submit"><Icon name="send" size={21} /></button>
+                  <button aria-label="发送消息" className="send-button" disabled={(!draft.trim() && !draftAttachments.length) || mode === "image" || attachmentBusy} type="submit"><Icon name="send" size={21} /></button>
                 )}
               </div>
             </div>
@@ -888,6 +1112,10 @@ function App() {
           knowledgeLoading={knowledgeLoading}
           knowledgeError={knowledgeError}
           onKnowledgeChanged={refreshKnowledge}
+          mcpServers={mcpServers}
+          mcpLoading={mcpLoading}
+          mcpError={mcpError}
+          onMcpChanged={refreshMcp}
           chatSettings={chatSettings}
           chatSettingsError={chatPreferences.error}
           onSaveChatSettings={settings => setChatPreferences({ settings: saveChatSettings(settings), error: "" })}
@@ -904,7 +1132,8 @@ function App() {
             }
           }}
           chatData={conversations}
-          chatBusy={replying}
+          chatBusy={replying || attachmentBusy}
+          onCleanAttachments={cleanAttachments}
           onExportChats={exportChats}
           onImportChats={importChats}
           onClearChats={clearChats}
@@ -913,6 +1142,10 @@ function App() {
       {searchOpen && <ConversationSearchDialog conversations={conversations} onClose={() => setSearchOpen(false)} onSelect={id => {
         selectConversation(id); setSearchOpen(false); focusComposer();
       }} />}
+      {attachmentNotice && <AttachmentNotice notice={attachmentNotice} onClose={() => { setAttachmentNotice(null); focusComposer(); }} />}
+      {pendingMcp && <McpApprovalDialog approval={pendingMcp.approval} modelName={pendingMcp.modelName}
+        providerName={pendingMcp.providerName} cloudModel={pendingMcp.cloudModel} busy={mcpDecisionBusy}
+        error={mcpDecisionError} onDecision={allow => void decideMcp(allow)} />}
     </div>
   );
 }

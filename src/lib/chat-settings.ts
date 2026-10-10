@@ -1,5 +1,6 @@
 import type { ChatTurn } from "./modelport";
 import type { Message } from "./chat-store";
+import type { Attachment } from "./attachments";
 
 export type ChatSettings = {
   sendShortcut: "enter" | "ctrl-enter";
@@ -58,7 +59,7 @@ export function shouldSendOnKey(event: Pick<KeyboardEvent, "key" | "keyCode" | "
   return shortcut === "ctrl-enter" ? event.ctrlKey || event.metaKey : !event.ctrlKey && !event.metaKey;
 }
 
-export function buildRequestHistory(messages: readonly Pick<Message, "role" | "content" | "status" | "savedOnly" | "topicStart">[], question: string, contextTurns: number): ChatTurn[] {
+export function buildRequestHistory(messages: readonly Pick<Message, "role" | "content" | "status" | "savedOnly" | "topicStart" | "attachments" | "toolRounds" | "reasoningContent" | "thinking">[], question: string, contextTurns: number, attachments?: Attachment[]): ChatTurn[] {
   const rounds: ChatTurn[][] = [];
   let pending: ChatTurn | undefined;
   let notes: ChatTurn[] = [];
@@ -66,11 +67,19 @@ export function buildRequestHistory(messages: readonly Pick<Message, "role" | "c
     if (message.role === "user" && message.topicStart) { rounds.length = 0; pending = undefined; notes = []; }
     if (message.status || !message.content.trim()) { pending = undefined; continue; }
     const turn: ChatTurn = { role: message.role, content: message.content };
+    if (message.attachments?.length) turn.attachments = message.attachments;
+    if (message.role === "assistant") {
+      if (message.toolRounds?.length) turn.toolRounds = message.toolRounds;
+      if (message.reasoningContent !== undefined) turn.reasoningContent = message.reasoningContent;
+      if (message.thinking !== undefined) turn.thinking = message.thinking;
+    }
     if (message.role === "user" && message.savedOnly) { notes.push(turn); pending = undefined; }
     else if (message.role === "user") pending = turn;
     else if (pending) { rounds.push([...notes, pending, turn]); notes = []; pending = undefined; }
   }
-  const history = contextTurns > 0 ? [...rounds.slice(-contextTurns).flat(), ...notes].slice(-99) : [];
-  if (history[0]?.role === "assistant") history.shift();
-  return [...history, { role: "user", content: question }];
+  const selected = contextTurns > 0 ? rounds.slice(-contextTurns) : [];
+  const selectedNotes = contextTurns > 0 ? notes.slice(-99) : [];
+  while (selected.length && selected.flat().length + selectedNotes.length > 99) selected.shift();
+  const history = [...selected.flat(), ...selectedNotes];
+  return [...history, { role: "user", content: question, ...(attachments?.length ? { attachments } : {}) }];
 }

@@ -1,11 +1,16 @@
 {
   "name": "modelport",
   "private": true,
-  "version": "0.8.0",
+  "license": "MIT",
+  "engines": { "node": "24.x" },
+  "version": "0.11.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "check": "tsc --noEmit",
+    "check:repo": "node scripts/check-repository.mjs",
+    "test": "node scripts/run-checks.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },

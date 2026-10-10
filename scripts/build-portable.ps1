@@ -1,11 +1,26 @@
 param(
-    [switch]$ReplaceExisting
+    [switch]$ReplaceExisting,
+    [switch]$PackageOnly
 )
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $releaseDir = Join-Path $projectRoot 'release'
 $outputExe = Join-Path $releaseDir 'ModelPort.exe'
+$packageFiles = @('LICENSE', 'THIRD_PARTY_NOTICES.md', 'licenses\Apache-2.0.txt', 'licenses\Geist-OFL-1.1.txt', '启动 ModelPort.cmd')
+foreach ($relativePath in $packageFiles) {
+    if (-not (Test-Path -LiteralPath (Join-Path $projectRoot $relativePath) -PathType Leaf)) {
+        throw "缺少发布所需文件：$relativePath"
+    }
+}
+
+function Copy-PortableNotices {
+    foreach ($relativePath in $packageFiles) {
+        $destination = Join-Path $releaseDir $relativePath
+        New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $projectRoot $relativePath) -Destination $destination -Force -ErrorAction Stop
+    }
+}
 
 if ($env:CARGO_TARGET_DIR) {
     if ([System.IO.Path]::IsPathRooted($env:CARGO_TARGET_DIR)) {
@@ -19,12 +34,24 @@ if ($env:CARGO_TARGET_DIR) {
 
 $builtExe = Join-Path $targetDir 'release\modelport.exe'
 
+function Get-PortableSha256([string]$Path) {
+    $stream = [System.IO.File]::OpenRead($Path)
+    $algorithm = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return [System.BitConverter]::ToString($algorithm.ComputeHash($stream)).Replace('-', '')
+    } finally {
+        $stream.Dispose()
+        $algorithm.Dispose()
+    }
+}
+
 if (-not (Test-Path -LiteralPath (Join-Path $projectRoot 'node_modules\.bin\tauri.cmd') -PathType Leaf)) {
     throw '缺少项目依赖。请先在项目根目录运行 npm ci。'
 }
 
-Push-Location -LiteralPath $projectRoot
-try {
+if (-not $PackageOnly) {
+  Push-Location -LiteralPath $projectRoot
+  try {
     # Tauri's release build and a later plain Cargo build share the same output
     # filename. Clear only this package's release artifacts so Cargo cannot reuse
     # an executable that was compiled without Tauri's embedded frontend assets.
@@ -37,18 +64,29 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Tauri 构建失败，退出码：$LASTEXITCODE"
     }
-} finally {
+  } finally {
     Pop-Location
+  }
 }
 
 if (-not (Test-Path -LiteralPath $builtExe -PathType Leaf)) {
     throw "构建完成，但没有找到程序：$builtExe"
 }
 
+if ($PackageOnly) {
+    # shortcut: version-only check; use a full build whenever source or frontend assets changed.
+    $expectedVersion = (Get-Content -LiteralPath (Join-Path $projectRoot 'package.json') -Raw | ConvertFrom-Json).version
+    $artifactVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($builtExe).ProductVersion
+    if ($artifactVersion -ne $expectedVersion) {
+        throw "发布文件版本 $artifactVersion 与项目版本 $expectedVersion 不符，请先完成 Tauri 发布构建。"
+    }
+}
+
 if (Test-Path -LiteralPath $outputExe -PathType Leaf) {
-    $builtHash = (Get-FileHash -LiteralPath $builtExe -Algorithm SHA256).Hash
-    $outputHash = (Get-FileHash -LiteralPath $outputExe -Algorithm SHA256).Hash
+    $builtHash = Get-PortableSha256 $builtExe
+    $outputHash = Get-PortableSha256 $outputExe
     if ($builtHash -eq $outputHash) {
+        Copy-PortableNotices
         Write-Host "程序已是当前构建版本：$outputExe"
         exit 0
     }
@@ -87,6 +125,7 @@ try {
 }
 
 Write-Host "已生成：$outputExe"
+Copy-PortableNotices
 if ($backupPath) {
     Write-Host "旧版已归档：$backupPath"
 }

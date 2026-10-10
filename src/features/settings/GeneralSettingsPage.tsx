@@ -8,7 +8,7 @@ import type { SettingsPageProps } from "./pages";
 import { useSettingsLeaveGuard } from "./useSettingsLeaveGuard";
 
 export function GeneralSettingsPage({ generalSettings, generalSettingsError, onSaveGeneralSettings, chatData, chatBusy,
-  onExportChats, onImportChats, onClearChats, onRegisterLeaveGuard }: SettingsPageProps) {
+  onExportChats, onImportChats, onClearChats, onCleanAttachments, onRegisterLeaveGuard }: SettingsPageProps) {
   const [draft, setDraft] = useState(() => ({ ...generalSettings }));
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -46,7 +46,7 @@ export function GeneralSettingsPage({ generalSettings, generalSettingsError, onS
       <label className="chat-settings-field" htmlFor="general-sidebar"><span>启动时侧栏</span><select id="general-sidebar" value={draft.sidebar} onChange={event => change({ sidebar: event.target.value as GeneralSettings["sidebar"] })}><option value="expanded">展开</option><option value="collapsed">收起</option></select></label>
       <p>空白新对话使用“默认模型”中保存的选择；未设置时使用本机 Ollama。不会删除旧记录，也不注册 Windows 开机启动。</p>
     </section>
-    <section className="settings-card"><h4>聊天数据</h4><p>本机共有 {chatData.length} 个会话、{messageCount} 条消息。JSON 备份未加密，含聊天和历史来源片段；不含 API Key、设置、技能正文或知识库原文件。请妥善保管。</p>
+    <section className="settings-card"><h4>聊天数据</h4><p>本机共有 {chatData.length} 个会话、{messageCount} 条消息。JSON 备份未加密，含聊天和历史来源片段；不含 API Key、设置、技能正文或知识库原文件。附件只保存引用，不含附件原件，跨电脑恢复后需要重新添加附件。请妥善保管。</p>
       <div className="general-data-actions">
         <button disabled={busy || chatBusy || !chatData.length} onClick={() => { try { onExportChats(); setNotice("已发起聊天备份下载，请在下载窗口完成保存。"); } catch (error) { setNotice(errorMessage(error)); } }} type="button">导出聊天备份</button>
         <button disabled={busy || chatBusy || Boolean(preview)} onClick={() => fileRef.current?.click()} type="button">导入聊天备份</button>
@@ -54,9 +54,14 @@ export function GeneralSettingsPage({ generalSettings, generalSettingsError, onS
           if (window.prompt("将清空本机全部聊天记录和未发送草稿，不能直接撤销。请先导出备份。不会删除 API Key、技能或知识库。\n确认请填写：清空对话") !== "清空对话") return;
           try { onClearChats(); setNotice("聊天记录和草稿已清空；如有导出的备份，可通过导入恢复。设置和资料库未修改。"); } catch (error) { setNotice(errorMessage(error)); }
         }} type="button">清空聊天记录</button>
+        <button disabled={busy || chatBusy || Boolean(preview)} onClick={async () => {
+          if (!window.confirm("请先关闭其他 ModelPort 窗口。仅清理当前窗口的聊天和草稿未引用的本地附件副本；旧 JSON 备份引用的闲置附件也会失效。原文件不会删除。确认已关闭其他窗口并继续？")) return;
+          setBusy(true); setNotice("");
+          try { setNotice(await onCleanAttachments()); } catch (error) { setNotice(errorMessage(error)); } finally { setBusy(false); }
+        }} type="button">清理闲置附件</button>
       </div>
       <input accept=".json,application/json" aria-label="选择聊天备份" hidden onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void readBackup(file); }} ref={fileRef} type="file" />
-      {preview && <div className="general-import-preview"><strong>{preview.name}</strong><p>识别到 {preview.conversations.length} 个会话，将作为副本合并，不覆盖现有会话。重复导入会产生副本；备份不会恢复缺失的技能或知识库。</p>
+      {preview && <div className="general-import-preview"><strong>{preview.name}</strong><p>识别到 {preview.conversations.length} 个会话，将作为副本合并，不覆盖现有会话。重复导入会产生副本；备份不会恢复缺失的技能、知识库或附件原件。</p>
         <div className="general-data-actions"><button disabled={busy || chatBusy} onClick={() => {
           if (!window.confirm(`确认合并导入“${preview.name}”中的 ${preview.conversations.length} 个会话？不会覆盖现有记录。`)) return;
           try { onImportChats(preview.conversations); setPreview(null); setNotice("备份已合并导入，可在侧栏打开；原有会话和草稿保留。"); } catch (error) { setNotice(errorMessage(error)); }

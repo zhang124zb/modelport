@@ -10,6 +10,7 @@ export type IconName =
   | "cube"
   | "document"
   | "file"
+  | "folder"
   | "globe"
   | "help"
   | "image"
@@ -29,9 +30,12 @@ export type IconName =
   | "settings"
   | "sliders"
   | "spark"
+  | "trash"
   | "wand";
 
 const iconShapes: Record<IconName, ReactNode> = {
+  trash: <><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" /></>,
+  folder: <path d="M3 7V5h6l2 2h10v13H3V7Z" />,
   keyboard: <><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 16h10"/></>,
   book: <><path d="M12 5v15M12 5C8 2 3 4 3 4v15s5-2 9 1c4-3 9-1 9-1V4s-5-2-9 1Z"/></>,
   cube: <><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 5v10l9 5 9-5V8M12 13v10"/></>,

@@ -10,12 +10,48 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+/target/
+/.npm/
+/.pnpm-store/
+/.yarn/cache/
 /release/
 /ui-preview.png
 *.local
 .env
 .env.*
 !.env.example
+
+# Local runtime data and private exports are not source files.
+/.modelport/
+/app-data/
+/user-data/
+/.test-data/
+ModelPort-chats-*.json
+modelport-chats-*.json
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Distribute binaries via Releases, never as source history.
+*.exe
+*.msi
+*.msix
+*.dll
+*.pdb
+
+# Credentials, signing material and crash dumps.
+*.key
+*.pem
+*.p12
+*.pfx
+*.dmp
+credentials.json
+secrets.json
+.npmrc
+.netrc
 
 # Editor directories and files
 .vscode/*

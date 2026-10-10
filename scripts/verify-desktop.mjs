@@ -69,7 +69,7 @@ try {
     await waitFor(`document.querySelector('#settings-page-title').textContent === ${JSON.stringify(label)}`);
     assert.equal(await evaluate("document.querySelector('.settings-nav [aria-current=\"page\"]').innerText.trim()"), label);
     if (label === "模型提供方") {
-      await evaluate("document.querySelector('.settings-content .connection-actions button').click()");
+      await evaluate("document.querySelector('.settings-content .provider-models-heading button').click()");
       await waitFor("document.querySelector('.settings-content .connection-notice')?.textContent.includes('连接成功')");
     }
   }

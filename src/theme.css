@@ -1,5 +1,12 @@
 /* Share Streamdown/shadcn's .dark convention; keep the existing light palette unchanged. */
 :root { color-scheme: light; }
+.dark .providers-settings :is(.provider-editor, .provider-card, .connection-actions) { color: var(--mp-text); background: var(--mp-surface); border-color: var(--border); }
+.dark .providers-settings .provider-card.selected { background: var(--mp-soft); border-color: #6393c6; }
+.dark .providers-settings :is(.key-field input, .key-field select, .provider-model-create input) { color: var(--mp-text); background: #18232f; border-color: var(--border); }
+.dark .providers-settings :is(.provider-hint, .provider-url-preview, .provider-guide, .provider-model-empty, .provider-model-list li, .connection-notice, .provider-network) { color: var(--mp-muted); border-color: var(--border); }
+.dark :is(.attachment-menu, .attachment-dialog, .attachment-card) { color: var(--mp-text); background: var(--mp-surface); border-color: var(--border); }
+.dark .attachment-missing { color: #ffb6a7; }
+.dark .attachment-status { color: var(--mp-muted); }
 :root.dark { color-scheme: dark; color: #e3eaf2; background: #131b26; --blue: #79b8ff; --blue-soft: #203e60; --border: #394657; --mp-surface: #202b39; --mp-raised: #293748; --mp-text: #e3eaf2; --mp-muted: #afbfce; --mp-soft: #1b344e; }
 .dark :is(.app-shell, .brand-row) { background: #131b26; }
 .dark :is(.sidebar, .sidebar-footer) { background: #18222e; }

@@ -18,6 +18,7 @@ modelport/
 
 ## 数据流
 
+- `providers.rs` 维护内置与自定义提供商的独立配置、模型列表和地址校验；`connection.rs` 按协议发送请求，Claude 使用原生 Messages / SSE，兼容服务复用 Chat Completions。API Key 仍只在系统凭据库中，接口及安全边界见 [模型提供商](./PROVIDERS.md)。
 - `src/App.tsx` 管理当前窗口中的对话、模型选择和连接设置。
 - `src/lib/modelport.ts` 统一调用 Tauri 命令。Rust 命令在 `src-tauri/src/connection.rs` 中读取 Windows 安全凭据，并向固定的 OpenAI、DeepSeek 或本机 Ollama 地址发请求；前端不直接调用这些服务商。
 - 文本回复通过 Tauri Channel 从 Rust 向前端逐段传递；命令结束时再返回完整的已生成文本和完成状态，用于核对最后一段是否到达界面。停止或失败时保留已收到的部分内容，未收到回复时可将用户问题送回输入框编辑后重试。
@@ -29,6 +30,8 @@ modelport/
 - 常规设置独立保存在 `modelport.preferences.general.v1`，主题复用 `.dark` 约定，启动策略只在初始化时应用。聊天备份复用显式字段归一化，导入创建副本，数据操作先保存后更新状态；未扩展原生权限或依赖，接口见 [常规设置](./GENERAL_SETTINGS.md)。
 - 默认模型独立保存在 `modelport.preferences.models.v1`，只保存提供方和模型 ID。空白启动、新建和清空共用解析函数，已有会话保持自己的模型；默认选择不在列表中时保留引用，不自动跨服务回退，接口见 [默认模型](./DEFAULT_MODELS.md)。
 - 指令型技能在应用数据目录中独立保存，通过 UUID 与内容版本引用接入原生请求，接口和安全范围见 [Skills 文档](./SKILLS.md)。
+- 聊天附件由 `attachments.rs` 保存独立副本，WebView 只保留元数据引用。原生解析本地副本并按提供方生成图片 / 文字内容；Ollama 实际能力检测、历史及备份边界见 [附件文档](./ATTACHMENTS.md)。文件选择和缩放复用浏览器能力，PNG / Base64 复用已存在的 Rust 依赖版本。
+- `mcp.rs` 维护独立服务配置和凭据，提供受限 HTTP 工具发现、离线 Schema 验证和一次性授权；`stream_chat_mcp` 在原生侧持有参数、串行执行并回传完整惰性工具轮次。前端无法通过独立命令直接执行工具，普通聊天管线不授予 MCP 权限。边界与接口见 [MCP 文档](./MCP.md)。
 
 ## Git 中保存什么
 

@@ -1,4 +1,5 @@
 import type { ModelOption } from "./modelport";
+import { isProviderId } from "./providers.ts";
 
 export type ModelReference = Pick<ModelOption, "provider" | "id">;
 export type ModelDefaults = { chatModel: ModelReference | null };
@@ -11,7 +12,7 @@ export function validateModelDefaults(value: unknown): ModelDefaults {
   if (reference === null || reference === undefined) return { chatModel: null };
   if (typeof reference !== "object" || Array.isArray(reference)) throw new Error("默认模型选择无效。");
   const { provider, id } = reference as Record<string, unknown>;
-  if ((provider !== "ollama" && provider !== "openai" && provider !== "deepseek") || typeof id !== "string"
+  if (!isProviderId(provider) || typeof id !== "string"
     || !id.trim() || id.length > 240 || /[\u0000-\u001f\u007f-\u009f]/.test(id)) throw new Error("默认模型提供方或模型标识无效。");
   return { chatModel: { provider, id } };
 }
