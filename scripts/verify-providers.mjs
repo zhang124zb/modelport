@@ -38,7 +38,9 @@ try {
   client = await connectDesktop(Number(process.argv[2] ?? 9390));
   const { command, evaluate, waitFor, reload, on } = client;
   on("Page.javascriptDialogOpening", () => void command("Page.handleJavaScriptDialog", { accept: acceptDialog }));
-  on("Runtime.exceptionThrown", ({ exceptionDetails }) => exceptions.push(exceptionDetails.text));
+  on("Runtime.exceptionThrown", ({ exceptionDetails }) => exceptions.push({ text: exceptionDetails.text,
+    description: exceptionDetails.exception?.description ?? exceptionDetails.exception?.value,
+    url: exceptionDetails.url, line: exceptionDetails.lineNumber }));
   await command("Page.enable"); await command("Runtime.enable");
   originals = await Promise.all(keys.map(key => evaluate(key === "modelport.chat.v1" ? chatStorageRawExpression : `localStorage.getItem(${JSON.stringify(key)})`)));
   assert.equal((await evaluate(desktopChatStateExpression)).conversations?.length ?? 0, 0, "Use a fresh isolated WebView, never real chats"); verified = true;

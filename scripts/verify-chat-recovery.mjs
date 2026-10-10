@@ -83,6 +83,7 @@ try {
   assert.ok(rendered[0].includes('"A"') && !rendered[0].includes('"B"'));
   assert.ok(rendered[1].includes('"B"') && !rendered[1].includes('"A"'));
   // Mermaid intentionally renders on intersection; test it in the visible viewport.
+  await waitFor("Boolean(document.querySelector('[data-streamdown=\"mermaid-block\"]'))");
   await evaluate("document.querySelector('[data-streamdown=\"mermaid-block\"]').scrollIntoView({ block: 'center' })");
   await waitFor("Boolean(document.querySelector('.message-bubble .katex')) && [...document.querySelectorAll('.message-bubble svg')].some(svg => svg.textContent.includes('MARKDOWN_GRAPH_OK'))");
   assert.ok(await evaluate("document.querySelector('.message-bubble table')?.textContent.includes('中文列')"));
