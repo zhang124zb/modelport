@@ -18,6 +18,9 @@ assert.equal(lock.version, pkg.version); assert.equal(lock.packages[""].version,
 assert.equal(JSON.parse(read("src-tauri/tauri.conf.json")).version, pkg.version);
 assert.equal(read("src-tauri/Cargo.toml").match(/^version = "([^"]+)"/m)[1], pkg.version);
 assert.equal(read("src-tauri/Cargo.lock").match(/name = "modelport"\s+version = "([^"]+)"/)[1], pkg.version);
+assert.equal(pkg.dependencies["@tauri-apps/api"].match(/\d+\.\d+/)[0],
+  read("src-tauri/Cargo.toml").match(/^tauri = \{ version = "(\d+\.\d+)\./m)[1],
+  "Tauri Rust and JavaScript APIs must stay on the same major/minor release");
 assert.ok(read("src/App.tsx").includes(`关于（${pkg.version}）`));
 assert.ok(read("scripts/test-desktop.ps1").includes("WEBVIEW2_USER_DATA_FOLDER"));
 assert.ok(read("scripts/test-desktop.ps1").includes("--remote-debugging-address=127.0.0.1"));

@@ -22,7 +22,7 @@
     "@streamdown/code": "^1.1.1",
     "@streamdown/math": "^1.0.2",
     "@streamdown/mermaid": "^1.0.2",
-    "@tauri-apps/api": "^2",
+    "@tauri-apps/api": "^2.12.2",
     "@tauri-apps/plugin-opener": "^2",
     "cn": "^0.3.2",
     "react": "^19.1.0",
