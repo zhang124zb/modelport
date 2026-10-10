@@ -28,6 +28,6 @@
 ## 验证
 
 - `node scripts/verify-chat-settings-store.mjs`：Node.js 24；配置迁移 / 冲突 / 保存失败、输入法、固定映射、循环导航、仅保存与话题持久化、上下文与数量边界。
-- `node scripts/verify-keyboard-shortcuts.mjs <调试端口> [截图路径]`：仅全新独立 WebView 配置；实际按键、8 项界面、两个页面互不覆盖、退出 / 存储失败保护、搜索 / 焦点、最小窗口、重启，以及真实 Ollama 请求的上下文。结束恢复测试前聊天与配置，不发送云端请求，不修改技能 / 知识库。
+- `node scripts/verify-keyboard-shortcuts.mjs <调试端口> [截图路径]`：仅全新独立 WebView 配置；实际按键、8 项界面、两个页面互不覆盖、退出 / 存储失败保护、搜索 / 焦点、最小窗口、重启，以及原生 HTTP 请求的上下文。使用临时本机模型服务，无需 Ollama 或 API Key；结束恢复聊天与配置，并按 UUID 删除临时提供商，不修改技能 / 知识库。统一运行见 [桌面回归](./DESKTOP_TESTS.md)。
 - `node scripts/verify-chat-settings.mjs <调试端口>`：原有对话设置回归，发送选项从新模块配置。
 - `node scripts/verify-desktop.mjs <调试端口>`：12 分类切换、遮罩、默认 Ollama 与历史模型恢复。

@@ -1,16 +1,15 @@
-import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent, MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ConnectionModal } from "@/components/ConnectionModal";
-import type { ProviderSettingsProps } from "@/components/ConnectionModal";
 import { Icon } from "@/components/Icon";
 import { SettingsDialog } from "@/features/settings/SettingsDialog";
 import { ConversationSearchDialog } from "@/components/ConversationSearchDialog";
 import { AttachmentList, AttachmentMenu, AttachmentNotice } from "@/components/ChatAttachments";
-import { McpApprovalDialog, McpToolTrace } from "@/components/McpApprovalDialog";
+import { McpApprovalDialog } from "@/components/McpApprovalDialog";
 import { mcp } from "@/lib/mcp";
-import type { McpApproval, McpEvent, McpServer } from "@/lib/mcp";
-import type { McpSelection, ToolRound, ToolTrace } from "@/lib/mcp-history";
+import type { McpServer } from "@/lib/mcp";
+import type { McpSelection } from "@/lib/mcp-history";
 import type { AttachmentNoticeData } from "@/components/ChatAttachments";
 import { attachmentIds, fileKind, maxAttachments, readAttachment } from "@/lib/attachments";
 import type { Attachment } from "@/lib/attachments";
@@ -22,11 +21,14 @@ import {
   modelport,
   providerInfo,
 } from "@/lib/modelport";
-import type { KnowledgeSummary, ModelOption, ProviderConfig, ProviderId, SelectedKnowledge, SelectedSkill, SkillSummary } from "@/lib/modelport";
-import { defaultProviderConfigs, isCustomProvider } from "@/lib/providers";
-import { KnowledgeSources } from "@/components/KnowledgeSources";
+import type { KnowledgeSummary, ModelOption, SelectedKnowledge, SelectedSkill, SkillSummary } from "@/lib/modelport";
+import { isCustomProvider } from "@/lib/providers";
+import { ConversationMessages } from "@/features/chat/ConversationMessages";
+import { useChatHistory } from "@/features/chat/useChatHistory";
+import { useChatLifecycle } from "@/features/chat/useChatLifecycle";
+import { useModelConnections } from "@/features/connections/useModelConnections";
 import type { SettingsSectionId } from "@/features/settings/sections";
-import { loadChatState, mergeImportedChats, saveChatState, serializeChatBackup } from "@/lib/chat-store";
+import { mergeImportedChats, readRawChatState, serializeChatBackup, withoutEmptyAssistantMessages } from "@/lib/chat-store";
 import type { ChatState, Conversation, Message } from "@/lib/chat-store";
 import { buildRequestHistory, loadChatSettings, saveChatSettings, shouldSendOnKey } from "@/lib/chat-settings";
 import { adjacentConversationId, getAppShortcut, matchesSaveOnlyShortcut } from "@/lib/keyboard-shortcuts";
@@ -35,23 +37,6 @@ import { loadModelDefaults, resolveDefaultModel, saveModelDefaults } from "@/lib
 import type { ModelDefaults } from "@/lib/model-defaults";
 import "./App.css";
 import "./theme.css";
-
-const MessageResponse = lazy(() =>
-  import("@/components/ai-elements/message").then((module) => ({ default: module.MessageResponse })),
-);
-
-type ActiveRequest = {
-  requestId: string;
-  conversationId: string;
-  assistantMessageId: string;
-};
-
-function withoutEmptyAssistantMessages(conversations: Conversation[]): Conversation[] {
-  return conversations.map((conversation) => ({
-    ...conversation,
-    messages: conversation.messages.filter((message) => message.role !== "assistant" || message.content.length > 0 || message.toolTrace?.length || message.toolRounds?.length),
-  }));
-}
 
 function pickDefaultModel(settings: ModelDefaults, choices: readonly ModelOption[]): ModelOption {
   const reference = resolveDefaultModel(settings, choices);
@@ -65,31 +50,20 @@ function App() {
   const generalSettings = generalPreferences.settings;
   const [chatPreferences, setChatPreferences] = useState(loadChatSettings);
   const chatSettings = chatPreferences.settings;
-  const [initialChatState] = useState(() => {
-    const state = loadChatState();
-    return { ...state, activeConversationId: generalSettings.startup === "new-chat" ? null : state.activeConversationId,
-      conversations: withoutEmptyAssistantMessages(state.conversations) };
-  });
-  const [conversations, setConversations] = useState<Conversation[]>(initialChatState.conversations);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(initialChatState.activeConversationId);
+  const { activeRequestRef, replyingId, streamingMessageId, stoppingRequestId, conversationErrors, setConversationErrors,
+    pendingMcp, mcpDecisionBusy, mcpDecisionError, runReply, stopChat, decideMcp } = useChatLifecycle();
+  const { initialChatState, conversations, setConversations, activeConversationId, setActiveConversationId,
+    storageError, chatRecoveryError, storeManagedChats: persistManagedChats } = useChatHistory(generalSettings.startup, replyingId);
+  const [chatError, setChatError] = useState("");
+  const { selectedModel, setSelectedModel, modelChoices, providerConfigs, configuredKeys, setSelectedProvider,
+    connectionCenterOpen, setConnectionCenterOpen, closeConnectionCenter, clearConnectionDraft, providerSettingsProps } =
+    useModelConnections(initialChatState.conversations, initialChatState.activeConversationId,
+      pickDefaultModel(modelPreferences.settings, defaultModels), setChatError);
   const [draft, setDraft] = useState("");
   const [draftAttachments, setDraftAttachments] = useState<Attachment[]>([]);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [attachmentNotice, setAttachmentNotice] = useState<AttachmentNoticeData | null>(null);
-  const [selectedModel, setSelectedModel] = useState<ModelOption>(() =>
-    initialChatState.conversations.find((conversation) => conversation.id === initialChatState.activeConversationId)?.model ?? pickDefaultModel(modelPreferences.settings, defaultModels),
-  );
-  const [modelChoices, setModelChoices] = useState<ModelOption[]>(() => {
-    const choices = [...defaultModels];
-    for (const conversation of initialChatState.conversations) {
-      if (!choices.some((model) => model.id === conversation.model.id && model.provider === conversation.model.provider)) {
-        choices.push(conversation.model);
-      }
-    }
-    return choices;
-  });
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
-  const [connectionCenterOpen, setConnectionCenterOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("account");
@@ -105,37 +79,18 @@ function App() {
   const [mcpLoading, setMcpLoading] = useState(isDesktop);
   const [mcpError, setMcpError] = useState("");
   const [draftMcp, setDraftMcp] = useState<McpSelection[]>([]);
-  const [pendingMcp, setPendingMcp] = useState<{ approval: McpApproval; modelName: string; providerName: string; cloudModel: boolean } | null>(null);
-  const [mcpDecisionBusy, setMcpDecisionBusy] = useState(false);
-  const [mcpDecisionError, setMcpDecisionError] = useState("");
-  const [selectedProvider, setSelectedProvider] = useState<ProviderId>("ollama");
-  const [providerConfigs, setProviderConfigs] = useState<ProviderConfig[]>(defaultProviderConfigs);
-  const [configuredKeys, setConfiguredKeys] = useState<Partial<Record<ProviderId, boolean>>>({});
-  const [keyDraft, setKeyDraft] = useState("");
-  const [connectionBusy, setConnectionBusy] = useState(false);
-  const [connectionNotice, setConnectionNotice] = useState("");
-  const [chatError, setChatError] = useState("");
-  const [conversationErrors, setConversationErrors] = useState<Record<string, string>>({});
-  const [storageError, setStorageError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(generalSettings.sidebar === "expanded");
-  const [replyingId, setReplyingId] = useState<string | null>(null);
-  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
-  const [stoppingRequestId, setStoppingRequestId] = useState<string | null>(null);
   const [mode, setMode] = useState<"chat" | "image">("chat");
 
-  const activeRequestRef = useRef<ActiveRequest | null>(null);
   const preparingAttachmentsRef = useRef(false);
   const canvasRef = useRef<HTMLElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const keyboardHandlerRef = useRef<(event: KeyboardEvent) => void>(() => {});
   const followBottomRef = useRef(true);
-  const pendingSaveRef = useRef({ conversations, activeConversationId });
-  const saveTimerRef = useRef<number | null>(null);
-  const persistedReplyingIdRef = useRef<string | null>(null);
+  const pauseFollowBottom = useCallback(() => { followBottomRef.current = false; }, []);
   const skillsLoadRef = useRef(0);
   const knowledgeLoadRef = useRef(0);
   const mcpLoadRef = useRef(0);
-  const mcpDecisionRef = useRef(false);
 
   const activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
   const messages = activeConversation?.messages ?? [];
@@ -160,7 +115,7 @@ function App() {
       : editableFailedMessage?.status === "failed"
         ? "回复失败，可编辑问题后重试。"
         : "";
-  const visibleError = chatError || conversationError || recoveryNotice || chatPreferences.error || modelPreferences.error || generalPreferences.error || storageError;
+  const visibleError = chatRecoveryError || chatError || conversationError || recoveryNotice || chatPreferences.error || modelPreferences.error || generalPreferences.error || storageError;
 
   useLayoutEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -228,7 +183,10 @@ function App() {
       setMcpServers(loaded); setMcpError("");
       const enabled = new Set(loaded.filter(server => server.enabled).map(server => server.id));
       setDraftMcp(current => current.filter(selection => enabled.has(selection.id)));
-      setConversations(current => current.map(conversation => ({ ...conversation, mcp: conversation.mcp?.filter(selection => enabled.has(selection.id)) })));
+      setConversations(current => current.map(conversation => {
+        const selections = conversation.mcp?.filter(selection => enabled.has(selection.id));
+        return selections?.length === conversation.mcp?.length ? conversation : { ...conversation, mcp: selections };
+      }));
     } catch (error) { if (loadId === mcpLoadRef.current) setMcpError(errorMessage(error)); }
     finally { if (loadId === mcpLoadRef.current) setMcpLoading(false); }
   }, []);
@@ -243,87 +201,6 @@ function App() {
     else setDraftMcp(next);
     setChatError("");
   };
-  const decideMcp = async (allow: boolean) => {
-    if (!pendingMcp || mcpDecisionRef.current) return;
-    const approval = pendingMcp.approval;
-    if (activeRequestRef.current?.requestId !== approval.requestId) { setPendingMcp(null); return; }
-    mcpDecisionRef.current = true; setMcpDecisionBusy(true); setMcpDecisionError("");
-    try {
-      await mcp.decideTool(approval.requestId, approval.approvalId, allow);
-      setPendingMcp(current => current?.approval.approvalId === approval.approvalId ? null : current);
-    } catch (error) { setMcpDecisionError(`${errorMessage(error)} 未确认执行；可以关闭提示以拒绝，或等待超时。`); }
-    finally { mcpDecisionRef.current = false; setMcpDecisionBusy(false); }
-  };
-
-  useEffect(() => {
-    if (!isDesktop) return;
-    let disposed = false;
-    void modelport.listProviders().then(async configs => {
-      const keys = await Promise.all(configs.filter(config => config.id !== "ollama").map(async config => [config.id, await modelport.hasKey(config.id)] as const));
-      if (disposed) return;
-      setProviderConfigs(configs); setConfiguredKeys(Object.fromEntries(keys));
-      setModelChoices(current => {
-        const local = current.filter(model => model.provider === "ollama" && model.id);
-        const discovered = [...local, ...configs.flatMap(config => config.models.filter(id => config.id !== "ollama" || !local.some(model => model.id === id)).map(id => modelOption(config.id, id)))];
-        const retained = current.filter(model => model.provider === "ollama" || initialChatState.conversations.some(conversation => conversation.model.provider === model.provider && conversation.model.id === model.id));
-        return [...discovered, ...retained.filter(model => !discovered.some(item => item.provider === model.provider && item.id === model.id))];
-      });
-    }).catch(error => { if (!disposed) setChatError(errorMessage(error)); });
-    return () => { disposed = true; };
-  }, []);
-
-  useEffect(() => {
-    if (!isDesktop) return;
-    let cancelled = false;
-    void modelport.listModels("ollama").then((ids) => {
-      if (cancelled) return;
-      const discovered = ids.slice(0, 100).map((id) => modelOption("ollama", id));
-      if (!discovered.length) return;
-      setModelChoices((current) => [...discovered, ...current.filter((model) => model.provider !== "ollama")]);
-      setSelectedModel((current) => current.provider === "ollama" && !current.id ? discovered[0] : current);
-    }).catch(() => { /* Keep the local-model choice available when Ollama is offline. */ });
-    return () => { cancelled = true; };
-  }, []);
-
-  useEffect(() => {
-    pendingSaveRef.current = { conversations, activeConversationId };
-    const streamJustStarted = replyingId !== null && persistedReplyingIdRef.current !== replyingId;
-    persistedReplyingIdRef.current = replyingId;
-    if (!isDesktop) return;
-
-    const persist = () => {
-      saveTimerRef.current = null;
-      try {
-        saveChatState({
-          ...pendingSaveRef.current,
-          conversations: withoutEmptyAssistantMessages(pendingSaveRef.current.conversations),
-        });
-        setStorageError("");
-      } catch {
-        setStorageError("本地存储空间不足，当前对话可能无法保存。请删除不需要的对话。");
-      }
-    };
-
-    if (replyingId === null || streamJustStarted) {
-      if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
-      persist();
-    } else if (saveTimerRef.current === null) {
-      saveTimerRef.current = window.setTimeout(persist, 400);
-    }
-  }, [conversations, activeConversationId, replyingId]);
-
-  useEffect(() => () => {
-    if (saveTimerRef.current !== null) {
-      window.clearTimeout(saveTimerRef.current);
-      try {
-        saveChatState({
-          ...pendingSaveRef.current,
-          conversations: withoutEmptyAssistantMessages(pendingSaveRef.current.conversations),
-        });
-      } catch { /* The visible storage warning is set while mounted. */ }
-    }
-  }, []);
-
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas && replyingId === activeConversationId && followBottomRef.current) {
@@ -386,29 +263,23 @@ function App() {
     setMode("image");
   };
 
-  const closeConnectionCenter = () => {
-    setKeyDraft("");
-    setConnectionNotice("");
-    setConnectionCenterOpen(false);
-  };
-
   const storeManagedChats = (state: ChatState) => {
     if (activeRequestRef.current || preparingAttachmentsRef.current) throw new Error("请结束生成或附件处理后再管理聊天数据。");
-    try { saveChatState(state); } catch { throw new Error("无法保存聊天数据，请检查存储空间；现有会话尚未改变。"); }
-    if (saveTimerRef.current !== null) { window.clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
-    pendingSaveRef.current = state;
-    setConversations(state.conversations); setActiveConversationId(state.activeConversationId);
-    setStorageError("");
+    persistManagedChats(state);
   };
-  const exportChats = () => {
-    if (activeRequestRef.current || preparingAttachmentsRef.current) throw new Error("请结束生成或附件处理后再导出聊天。");
-    const content = serializeChatBackup({ conversations, activeConversationId });
+  const downloadChatData = (content: string, prefix: string) => {
     const url = URL.createObjectURL(new Blob([content], { type: "application/json;charset=utf-8" }));
     const anchor = document.createElement("a");
-    anchor.href = url; anchor.download = `ModelPort-chats-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+    anchor.href = url; anchor.download = `ModelPort-chats-${prefix}${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
     document.body.append(anchor);
     try { anchor.click(); } finally { anchor.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 60000); }
   };
+  const exportChats = () => {
+    if (chatRecoveryError) throw new Error("请先导出原始记录或完成恢复，避免把不完整的聊天当成备份。");
+    if (activeRequestRef.current || preparingAttachmentsRef.current) throw new Error("请结束生成或附件处理后再导出聊天。");
+    downloadChatData(serializeChatBackup({ conversations, activeConversationId }), "");
+  };
+  const exportRawChats = () => downloadChatData(readRawChatState(), "recovery-");
   const importChats = (imported: readonly Conversation[]) => {
     const copies = mergeImportedChats([], imported).map(conversation => ({ ...conversation,
       skill: skills.some(skill => skill.enabled && skill.id === conversation.skill?.id) ? conversation.skill : undefined,
@@ -437,94 +308,12 @@ function App() {
   };
 
   const closeSettings = () => {
-    setKeyDraft("");
-    setConnectionNotice("");
+    clearConnectionDraft();
     setSettingsOpen(false);
   };
 
-  const saveConnection = async () => {
-    if (selectedProvider === "ollama") return;
-    if (!isDesktop) {
-      setConnectionNotice("请在 ModelPort 桌面应用中配置连接。");
-      return;
-    }
-    setConnectionBusy(true);
-    setConnectionNotice("");
-    try {
-      await modelport.saveKey(selectedProvider, keyDraft);
-      setConfiguredKeys((current) => ({ ...current, [selectedProvider]: true }));
-      setKeyDraft("");
-      setConnectionNotice("API Key 已保存到系统安全凭据库。可点击“测试连接”获取模型列表。");
-    } catch (error) {
-      setConnectionNotice(errorMessage(error));
-    } finally {
-      setConnectionBusy(false);
-    }
-  };
-
-  const removeConnection = async () => {
-    if (selectedProvider === "ollama" || !isDesktop) return;
-    setConnectionBusy(true);
-    setConnectionNotice("");
-    try {
-      await modelport.removeKey(selectedProvider);
-      setConfiguredKeys((current) => ({ ...current, [selectedProvider]: false }));
-      setConnectionNotice("已从系统安全凭据库删除该服务的 API Key。");
-    } catch (error) {
-      setConnectionNotice(errorMessage(error));
-    } finally {
-      setConnectionBusy(false);
-    }
-  };
-
-  const saveProviderConfig = async (config: ProviderConfig) => {
-    const saved = await modelport.saveProvider(config);
-    setProviderConfigs(current => current.map(item => item.id === saved.id ? saved : item));
-    setModelChoices(current => [...current.filter(model => model.provider !== saved.id), ...saved.models.map(id => modelOption(saved.id, id)),
-      ...(saved.id === "ollama" && !saved.models.length ? [defaultModels[0]] : [])]);
-    return saved;
-  };
-  const addProviderConfig = async () => {
-    const added = await modelport.addProvider();
-    setProviderConfigs(current => [...current, added]); setSelectedProvider(added.id); setKeyDraft(""); setConnectionNotice("");
-  };
-  const removeProviderConfig = async () => {
-    const provider = selectedProvider;
-    await modelport.removeProvider(provider);
-    setProviderConfigs(current => current.filter(item => item.id !== provider));
-    setModelChoices(current => current.filter(model => model.provider !== provider));
-    setConfiguredKeys(current => { const updated = { ...current }; delete updated[provider]; return updated; });
-    setSelectedProvider("ollama"); setKeyDraft(""); setConnectionNotice("已删除自定义提供商及其密钥；聊天记录和原来的默认模型选择保留，需手动重新选择连接。");
-  };
-
-  const testConnection = async () => {
-    if (!isDesktop) {
-      setConnectionNotice("请在 ModelPort 桌面应用中测试连接。");
-      return;
-    }
-    setConnectionBusy(true);
-    setConnectionNotice("");
-    try {
-      const ids = await modelport.listModels(selectedProvider);
-      const filtered = selectedProvider === "openai"
-        ? ids.filter((id) => /^(gpt-|o\d|chatgpt-)/.test(id))
-        : ids;
-      const validIds = filtered.filter(id => id.trim() && new TextEncoder().encode(id).length <= 128 && !/[\u0000-\u001f\u007f-\u009f]/.test(id));
-      const config = providerConfigs.find(item => item.id === selectedProvider);
-      if (!config) throw new Error("提供商已删除，请重新选择。");
-      const models = [...new Set([...config.models, ...validIds])].slice(0, 100);
-      await saveProviderConfig({ ...config, models });
-      const discovered = validIds.slice(0, 100).map((id) => modelOption(selectedProvider, id));
-      if (selectedProvider === "ollama" && discovered.length > 0) setSelectedModel(current => current.provider === "ollama" && !current.id ? discovered[0] : current);
-      setConnectionNotice(discovered.length === 0 ? "连接成功，但没有发现可用模型。" : `连接成功，发现 ${discovered.length} 个模型。`);
-    } catch (error) {
-      setConnectionNotice(errorMessage(error));
-    } finally {
-      setConnectionBusy(false);
-    }
-  };
-
   const addAttachments = async (files: File[]) => {
+    if (chatRecoveryError) { openSettings("general"); return; }
     if (!files.length || preparingAttachmentsRef.current || activeRequestRef.current || mode === "image") return;
     if (!isDesktop) { setAttachmentNotice({ title: "请使用桌面应用", message: "附件保存和模型请求仅能在 ModelPort 桌面应用中使用。" }); return; }
     if (files.length + draftAttachments.length > maxAttachments) { setAttachmentNotice({ title: "附件数量超出限制", message: "每条消息最多添加 4 个附件，请先移除部分附件。" }); return; }
@@ -556,6 +345,7 @@ function App() {
   };
 
   const cleanAttachments = async (): Promise<string> => {
+    if (chatRecoveryError) throw new Error("聊天记录尚未恢复，不能安全判断哪些附件闲置；暂不清理。");
     if (preparingAttachmentsRef.current || activeRequestRef.current) throw new Error("请结束生成或附件处理后再清理。");
     preparingAttachmentsRef.current = true; setAttachmentBusy(true);
     try {
@@ -566,6 +356,7 @@ function App() {
 
   const sendMessage = async (event?: FormEvent, generateReply = true) => {
     event?.preventDefault();
+    if (chatRecoveryError) { openSettings("general"); return; }
     const content = draft.trim() || (draftAttachments.length ? "请分析这些附件。" : "");
     if (!content || activeRequestRef.current || preparingAttachmentsRef.current || mode === "image" || attachmentNotice) return;
     if (!isDesktop) {
@@ -661,100 +452,17 @@ function App() {
       return next;
     });
     if (!generateReply) return;
-    setReplyingId(conversationId);
-    setStreamingMessageId(assistantMessageId);
-    let receivedText = "";
-    let toolRounds: ToolRound[] | undefined;
-    let reasoningContent: string | undefined;
-    let thinking: string | undefined;
-    const settleMessages = (status: Message["status"], assistantContent: string) => {
-      setConversations((current) => current.map((conversation) => conversation.id === conversationId
-        ? { ...conversation, messages: conversation.messages.flatMap((message): Message[] => {
-          if (message.id === nextMessage.id) return [{ ...message, status }];
-          if (message.id === assistantMessageId) {
-            return assistantContent || message.toolTrace?.length || toolRounds?.length
-              ? [{ ...message, content: assistantContent, status, toolRounds, reasoningContent, thinking,
-                mcpModel: requestMcp.length ? { provider: selectedModel.provider, id: selectedModel.id } : undefined,
-                toolTrace: message.toolTrace?.map(trace => ["pending", "running"].includes(trace.status) ? { ...trace, status: "interrupted" } : trace) }] : [];
-          }
-          return [message];
-        }) }
-        : conversation));
-    };
-    try {
-      const onDelta = (delta: string) => {
-        if (activeRequestRef.current?.requestId !== requestId || !delta) return;
-        receivedText += delta;
-        setConversations((current) => current.map((conversation) => conversation.id === conversationId
-          ? { ...conversation, messages: conversation.messages.map((message) => message.id === assistantMessageId
-            ? { ...message, content: message.content + delta }
-            : message) }
-          : conversation));
-      };
-      const onSources = (retrieval: import("@/lib/modelport").KnowledgeContext) => {
-        setConversations(current => current.map(conversation => conversation.id === conversationId
-          ? { ...conversation, messages: conversation.messages.map(message => message.id === assistantMessageId ? { ...message, retrieval } : message) } : conversation));
-      };
-      const onMcpEvent = (event: McpEvent) => {
-        if (event.requestId !== requestId || activeRequestRef.current?.requestId !== requestId) return;
-        if (event.type === "approval") {
-          setMcpDecisionError("");
-          setPendingMcp({ approval: event, modelName: selectedModel.name,
-            providerName: providerInfo(selectedModel.provider, providerConfigs).name, cloudModel: selectedModel.provider !== "ollama" });
-        } else {
-          if (event.status !== "pending") setPendingMcp(current => current?.approval.approvalId === event.approvalId ? null : current);
-          const trace: ToolTrace = { approvalId: event.approvalId, serverName: event.serverName, toolName: event.toolName, status: event.status, summary: event.summary };
-          setConversations(current => current.map(conversation => conversation.id === conversationId
-            ? { ...conversation, messages: conversation.messages.map(message => message.id === assistantMessageId
-              ? { ...message, toolTrace: [...(message.toolTrace ?? []).filter(item => item.approvalId !== trace.approvalId), trace] } : message) } : conversation));
-        }
-      };
-      const result = requestMcp.length
-        ? await modelport.streamMcpChat(selectedModel.provider, selectedModel.id, history, requestId, onDelta, requestMcp, onMcpEvent,
-          requestSkill ?? null, requestKnowledge ?? null, onSources, chatSettings.systemPrompt)
-        : await modelport.streamChat(selectedModel.provider, selectedModel.id, history, requestId, onDelta,
-          requestSkill ?? null, requestKnowledge ?? null, onSources, chatSettings.systemPrompt);
-      toolRounds = result.toolRounds; reasoningContent = result.reasoningContent; thinking = result.thinking;
-      settleMessages(result.status === "completed" && result.content
-        ? undefined
-        : result.status === "cancelled" ? "stopped" : "failed", result.content);
-      if (result.status === "completed" && !result.content) {
-        setConversationErrors((current) => ({ ...current, [conversationId]: "模型返回了空内容，请重试。" }));
-      }
-      if (result.status === "failed") {
-        setConversationErrors((current) => ({ ...current, [conversationId]: result.error || "生成失败，请重试。" }));
-      }
-    } catch (error) {
-      settleMessages("failed", receivedText);
-      if (history.some(message => message.attachments?.length)) setAttachmentNotice({ title: "附件请求未完成", message: errorMessage(error) });
-      if (requestSkill) void refreshSkills();
-      if (requestKnowledge) void refreshKnowledge();
-      setConversationErrors((current) => ({ ...current, [conversationId]: errorMessage(error) }));
-    } finally {
-      setPendingMcp(current => current?.approval.requestId === requestId ? null : current);
-      if (activeRequestRef.current?.requestId === requestId) activeRequestRef.current = null;
-      setReplyingId(null);
-      setStreamingMessageId(null);
-      setStoppingRequestId(null);
-    }
-  };
-
-  const stopChat = async () => {
-    const request = activeRequestRef.current;
-    if (!request || stoppingRequestId === request.requestId) return;
-    setStoppingRequestId(request.requestId);
-    try {
-      await modelport.cancelChat(request.requestId);
-      setPendingMcp(current => current?.approval.requestId === request.requestId ? null : current);
-    } catch (error) {
-      if (activeRequestRef.current?.requestId === request.requestId) {
-        setStoppingRequestId(null);
-        setConversationErrors((current) => ({ ...current, [request.conversationId]: `停止失败：${errorMessage(error)}` }));
-      }
-    }
+    await runReply({ requestId, conversationId, assistantMessageId, userMessageId: nextMessage.id, model: selectedModel,
+      providerConfigs, history, services: requestMcp, skill: requestSkill, knowledge: requestKnowledge,
+      systemPrompt: chatSettings.systemPrompt, onFailure: error => {
+        if (history.some(message => message.attachments?.length)) setAttachmentNotice({ title: "附件请求未完成", message: errorMessage(error) });
+        if (requestSkill) void refreshSkills();
+        if (requestKnowledge) void refreshKnowledge();
+      } }, setConversations);
   };
 
   const editAndRetry = () => {
+    if (chatRecoveryError) { openSettings("general"); return; }
     const conversationId = activeConversationId;
     const failedMessage = editableFailedMessage;
     if (!conversationId || !failedMessage || activeRequestRef.current || preparingAttachmentsRef.current) return;
@@ -782,6 +490,7 @@ function App() {
 
   const focusComposer = () => window.requestAnimationFrame(() => textareaRef.current?.focus());
   const startNewTopic = () => {
+    if (chatRecoveryError) { openSettings("general"); return; }
     if (activeRequestRef.current || preparingAttachmentsRef.current || mode === "image") return;
     if (activeConversation?.messages.length) {
       setConversations(current => current.map(conversation => conversation.id === activeConversationId
@@ -824,27 +533,6 @@ function App() {
         <span className="conversation-date">{conversation.date}</span>
       </button>
     );
-  };
-
-  const providerSettingsProps: ProviderSettingsProps = {
-    configs: providerConfigs,
-    onSaveConfig: saveProviderConfig,
-    onAddProvider: addProviderConfig,
-    onDeleteProvider: removeProviderConfig,
-    busy: connectionBusy,
-    configuredKeys,
-    keyDraft,
-    notice: connectionNotice,
-    onKeyDraftChange: setKeyDraft,
-    onRemove: removeConnection,
-    onSave: saveConnection,
-    onSelectProvider: (providerId) => {
-      setSelectedProvider(providerId);
-      setKeyDraft("");
-      setConnectionNotice("");
-    },
-    onTest: testConnection,
-    selectedProvider,
   };
 
   return (
@@ -909,7 +597,7 @@ function App() {
             <button aria-label="设置" onClick={() => openSettings()} type="button"><Icon name="settings" /><span>设置</span></button>
             <button onClick={() => setConnectionCenterOpen(true)} type="button"><Icon name="providers" /><span>模型连接</span>{!Object.values(configuredKeys).some(Boolean) && <span className="status-dot" />}</button>
             <button disabled title="帮助中心正在开发" type="button"><Icon name="help" /><span>帮助</span></button>
-            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.11.0）</span></button>
+            <button className="muted" disabled type="button"><Icon name="info" /><span>关于（0.12.0）</span></button>
           </nav>
         </footer>
       </aside>
@@ -943,41 +631,10 @@ function App() {
               <p>{mode === "image" ? "图像生成即将开放。" : "选择模型并开始对话，你的数据由你掌控。"}</p>
             </div>
           ) : (
-            <div className="message-stream">
-              <div className="chat-heading">
-                <span>{activeConversation?.title ?? "新对话"}</span>
-              </div>
-              {messages.map((message) => (
-                <Fragment key={message.id}>
-                {message.topicStart && <div className="topic-divider">新话题 · 不携带之前的聊天上下文</div>}
-                <article className={`message ${message.role}`}>
-                  {message.role === "assistant" && <div className="assistant-avatar"><Icon name="spark" size={18} /></div>}
-                  <div className="message-bubble" style={{ fontSize: chatSettings.fontSize }}>
-                    {message.role === "assistant"
-                      ? message.content
-                        ? chatSettings.renderMarkdown
-                          ? <Suspense fallback={<span>正在排版回复…</span>}><MessageResponse key={message.id === streamingMessageId ? "streaming" : "static"} mode={message.id === streamingMessageId ? "streaming" : "static"}>{message.content}</MessageResponse></Suspense>
-                          : <div className="message-plain-text">{message.content}</div>
-                        : message.id === streamingMessageId && <div aria-label="正在生成回复" className="typing"><span /><span /><span /></div>
-                      : message.content}
-                    {message.attachments?.length ? <AttachmentList attachments={message.attachments} onNotice={setAttachmentNotice} /> : null}
-                    {message.skill && <span className="message-skill">选用技能：{message.skill.name} · {message.skill.revision.slice(0, 8)}</span>}
-                    {message.knowledge && <span className="message-knowledge">选用知识库：{message.knowledge.name} · {message.knowledge.revision.slice(0, 8)}</span>}
-                    {message.savedOnly && <span className="stream-note">仅保存，未生成回复</span>}
-                    {message.role === "assistant" && message.retrieval && <KnowledgeSources context={message.retrieval} />}
-                    {message.toolTrace?.length ? <details className="mcp-chat-trace"><summary>工具记录 · {message.toolTrace.length} 次（不会自动重放）</summary>
-                      <McpToolTrace events={message.toolTrace} />
-                    </details> : null}
-                    {message.role === "assistant" && message.status === "stopped" && <span className="stream-note">已停止生成</span>}
-                    {message.role === "assistant" && message.status === "failed" && <span className="stream-note">生成失败</span>}
-                    {message.role === "assistant" && message.status === "interrupted" && <span className="stream-note">生成中断</span>}
-                    {message.id === editableFailedMessage?.id && <span className="stream-note">{message.status === "stopped" ? "回复已停止" : message.status === "failed" ? "回复失败" : "回复中断"}</span>}
-                  </div>
-                </article>
-                </Fragment>
-              ))}
-              {activeConversation?.newTopicPending && <div className="topic-divider" role="status">新话题 · 下一条消息将重新开始上下文</div>}
-            </div>
+            activeConversation && <ConversationMessages key={activeConversation.id} conversation={activeConversation}
+              streamingMessageId={streamingMessageId} editableMessageId={editableFailedMessage?.id}
+              fontSize={chatSettings.fontSize} renderMarkdown={chatSettings.renderMarkdown}
+              canvasRef={canvasRef} onLoadOlder={pauseFollowBottom} onAttachmentNotice={setAttachmentNotice} />
           )}
         </section>
 
@@ -985,7 +642,8 @@ function App() {
           {visibleError && (
             <div className="chat-error" role="alert">
               <span>{visibleError}</span>
-              {editableFailedMessage && <button onClick={editAndRetry} type="button">编辑并重试</button>}
+              {chatRecoveryError ? <button onClick={() => openSettings("general")} type="button">恢复聊天记录</button>
+                : editableFailedMessage && <button onClick={editAndRetry} type="button">编辑并重试</button>}
             </div>
           )}
           <form className="composer" onSubmit={sendMessage}>
@@ -1133,6 +791,8 @@ function App() {
           }}
           chatData={conversations}
           chatBusy={replying || attachmentBusy}
+          chatStorageError={chatRecoveryError}
+          onExportRawChats={exportRawChats}
           onCleanAttachments={cleanAttachments}
           onExportChats={exportChats}
           onImportChats={importChats}

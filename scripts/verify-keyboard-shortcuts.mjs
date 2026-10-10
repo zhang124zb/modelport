@@ -1,6 +1,8 @@
-// Fresh isolated desktop profile only. Reads real Ollama; never sends cloud requests or changes native libraries.
+import { desktopChatStateExpression, chatStorageRawExpression, legacyChatSeedExpression, restoreChatStorageExpression } from "./chat-storage-fixture.mjs";
+// Fresh isolated desktop profile only. Loopback model fixture; no Ollama/cloud dependency or real credentials.
 // node scripts/verify-keyboard-shortcuts.mjs 9350 [keyboard.png]
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import { writeFileSync } from "node:fs";
 import { connectDesktop } from "./desktop-client.mjs";
 
@@ -8,11 +10,20 @@ const { command, evaluate, waitFor, reload, on, close } = await connectDesktop(N
 const preferencesKey = "modelport.preferences.chat.v1", chatKey = "modelport.chat.v1";
 let originalPreferences, originalChat, verified = false, acceptDialog = true, dialogs = 0;
 const exceptions = [];
+let fixtureProvider;
+const fixtureServer = createServer(async (request, response) => {
+  let raw = ""; for await (const chunk of request) raw += chunk;
+  const body = JSON.parse(raw);
+  assert.equal(request.url, "/v1/chat/completions");
+  assert.equal(body.model, "fixture-shortcuts");
+  response.setHeader("content-type", "text/event-stream");
+  response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: "MODELPORT_KEYBOARD_VERIFIED" } }] })}\n\ndata: [DONE]\n\n`);
+});
 on("Page.javascriptDialogOpening", () => { dialogs++; void command("Page.handleJavaScriptDialog", { accept: acceptDialog }); });
 on("Runtime.exceptionThrown", ({ exceptionDetails }) => exceptions.push(exceptionDetails.text));
 await command("Page.enable"); await command("Runtime.enable");
-const stored = key => evaluate(`localStorage.getItem(${JSON.stringify(key)})`);
-const chat = async () => JSON.parse(await stored(chatKey) ?? "{}");
+const stored = key => evaluate(key === "modelport.chat.v1" ? chatStorageRawExpression : `localStorage.getItem(${JSON.stringify(key)})`);
+const chat = async () => await evaluate(desktopChatStateExpression);
 const preferences = async () => JSON.parse(await stored(preferencesKey));
 async function key(key, code, windowsVirtualKeyCode, modifiers = 0) {
   for (const type of ["keyDown", "keyUp"]) await command("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode, modifiers, ...(type === "keyDown" && key === "Enter" ? { text: "\r" } : {}) });
@@ -35,6 +46,9 @@ try {
   await waitFor("Boolean(document.querySelector('.model-trigger'))");
   originalPreferences = await stored(preferencesKey); originalChat = await stored(chatKey);
   assert.equal(originalPreferences, null, "Use a fresh isolated WebView"); assert.equal((await chat()).conversations?.length ?? 0, 0, "Never run against real chats"); verified = true;
+  await new Promise((resolve, reject) => { fixtureServer.once("error", reject); fixtureServer.listen(0, "127.0.0.1", resolve); });
+  fixtureProvider = await evaluate("window.__TAURI_INTERNALS__.invoke('add_custom_provider')");
+  await evaluate(`window.__TAURI_INTERNALS__.invoke('save_provider_config', { config: ${JSON.stringify({ ...fixtureProvider, name: "快捷键回归临时提供商", baseUrl: `http://127.0.0.1:${fixtureServer.address().port}/v1`, chatPath: "/chat/completions", models: ["fixture-shortcuts"], networkCompatibility: false })} })`);
   const marker = "MODELPORT_KEYBOARD_VERIFIED";
   const legacy = { sendShortcut: "ctrl-enter", contextTurns: 3, systemPrompt: `Reply ONLY ${marker}.`, renderMarkdown: false, fontSize: 18 };
   await evaluate(`localStorage.setItem('${preferencesKey}', ${JSON.stringify(JSON.stringify(legacy))})`); await reload();
@@ -80,11 +94,12 @@ try {
 
   await trackRequests();
   await evaluate("document.querySelector('.model-trigger').click()");
-  await evaluate("[...document.querySelectorAll('.model-menu button')].find(button => button.innerText.includes('DeepSeek Flash')).click()");
+  await waitFor("[...document.querySelectorAll('.model-menu button')].some(button => button.querySelector('strong')?.innerText === 'fixture-shortcuts')");
+  await evaluate("[...document.querySelectorAll('.model-menu button')].find(button => button.querySelector('strong')?.innerText === 'fixture-shortcuts').click()");
   await saveNote("第一条快捷键记录：搜索内容命中");
   assert.equal(await evaluate("window.__shortcutRequests.length"), 0); assert.ok(await evaluate("!document.querySelector('.modal-backdrop') && document.querySelector('.stream-note').innerText.includes('仅保存')"));
   for (const text of ["第二条快捷键记录", "第三条快捷键记录"]) { await key("n", "KeyN", 78, 2); await saveNote(text); }
-  await waitFor("JSON.parse(localStorage.getItem('modelport.chat.v1')).conversations.length === 3");
+  await waitFor(`${desktopChatStateExpression}.conversations.length === 3`);
   let state = await chat(); const ids = state.conversations.map(conversation => conversation.id);
   assert.ok(state.conversations.every(conversation => conversation.messages.length === 1 && conversation.messages[0].savedOnly && !conversation.messages[0].status));
   await key("Tab", "Tab", 9, 2); assert.equal((await chat()).activeConversationId, ids[1]);
@@ -112,23 +127,22 @@ try {
   await evaluate("document.querySelector('.connection-modal [aria-label=\"关闭设置\"]').click()");
   console.log("PASS: save-only performs no API call, 3 conversations persist, all navigation shortcuts wrap, draft/IME guards and local title/content search");
 
-  const models = await evaluate("window.__TAURI_INTERNALS__.invoke('list_available_models', { provider: 'ollama' })"); assert.ok(models.length);
   const setup = { sendShortcut: "enter", sendWithoutReplyShortcut: "ctrl-enter", contextTurns: 3, systemPrompt: `Reply ONLY ${marker}.`, renderMarkdown: false, fontSize: 18 };
-  state = await chat(); state.conversations.find(conversation => conversation.id === ids[2]).model = { id: models[0], name: models[0], provider: "ollama", tone: "#111827", label: "O" };
-  await evaluate(`localStorage.setItem('${preferencesKey}', ${JSON.stringify(JSON.stringify(setup))}); localStorage.setItem('${chatKey}', ${JSON.stringify(JSON.stringify(state))})`); await reload();
-  await key("N", "KeyN", 78, 10); await waitFor("Boolean(JSON.parse(localStorage.getItem('modelport.chat.v1')).conversations.find(conversation => conversation.id === '" + ids[2] + "').newTopicPending)");
+  state = await chat(); state.conversations.find(conversation => conversation.id === ids[2]).model = { id: "fixture-shortcuts", name: "fixture-shortcuts", provider: fixtureProvider.id, tone: "#111827", label: "T" };
+  await evaluate(`localStorage.setItem('${preferencesKey}', ${JSON.stringify(JSON.stringify(setup))})`); await evaluate(legacyChatSeedExpression(JSON.stringify(state))); await reload();
+  await key("N", "KeyN", 78, 10); await waitFor(`Boolean(${desktopChatStateExpression}.conversations.find(conversation => conversation.id === '` + ids[2] + "').newTopicPending)");
   await reload(); await waitFor("document.querySelector('.topic-divider')?.innerText.includes('下一条')"); await trackRequests();
   await saveNote("NEW_TOPIC_LOCAL_NOTE");
   const topicState = (await chat()).conversations.find(conversation => conversation.id === ids[2]); assert.ok(!topicState.newTopicPending && topicState.messages.at(-1).topicStart && topicState.messages.at(-1).savedOnly);
   await fill(".composer textarea", "Follow the current instruction."); await key("Enter", "Enter", 13);
   await waitFor("window.__shortcutRequests.length === 1"); await waitFor(`!document.querySelector('[aria-label="停止生成"]') && [...document.querySelectorAll('.message.assistant')].at(-1)?.innerText.includes('${marker}')`, 900);
-  const request = await evaluate("window.__shortcutRequests[0]"); assert.equal(request.provider, "ollama"); assert.deepEqual(request.messages, [{ role: "user", content: "NEW_TOPIC_LOCAL_NOTE" }, { role: "user", content: "Follow the current instruction." }]);
+  const request = await evaluate("window.__shortcutRequests[0]"); assert.equal(request.provider, fixtureProvider.id); assert.deepEqual(request.messages, [{ role: "user", content: "NEW_TOPIC_LOCAL_NOTE" }, { role: "user", content: "Follow the current instruction." }]);
   assert.ok((await chat()).conversations.find(conversation => conversation.id === ids[2]).messages[0].content.includes("第一条"));
   await settings(); await select("chat-save-only-shortcut", "alt-enter"); await saveKeyboard(); await closeSettings(); await saveNote("ALT_ENTER_LOCAL_NOTE", 1);
   assert.equal(await evaluate("window.__shortcutRequests.length"), 1);
   state = await chat(); const retryConversation = state.conversations.find(conversation => conversation.id === ids[2]);
   retryConversation.messages.push({ id: "shortcut-failed-topic", role: "user", content: "FAILED_TOPIC_QUESTION", topicStart: true, status: "failed" });
-  await evaluate(`localStorage.setItem('${chatKey}', ${JSON.stringify(JSON.stringify(state))})`); await reload();
+  await evaluate(legacyChatSeedExpression(JSON.stringify(state))); await reload();
   await evaluate("[...document.querySelectorAll('.chat-error button')].find(button => button.innerText === '编辑并重试').click()");
   assert.ok((await chat()).conversations.find(conversation => conversation.id === ids[2]).newTopicPending);
   assert.equal(await evaluate("document.querySelector('.composer textarea').value"), "FAILED_TOPIC_QUESTION");
@@ -136,15 +150,17 @@ try {
   await waitFor("window.__shortcutRequests.length === 1"); await waitFor(`!document.querySelector('[aria-label="停止生成"]') && [...document.querySelectorAll('.message.assistant')].at(-1)?.innerText.includes('${marker}')`, 900);
   assert.deepEqual((await evaluate("window.__shortcutRequests[0]")).messages, [{ role: "user", content: "FAILED_TOPIC_QUESTION" }]);
   assert.deepEqual(exceptions, []);
-  console.log("PASS: new topic/retry exclude old history from actual Ollama, preserve records across restart, Alt+Enter saves only, and connection modals block shortcuts");
+  console.log("PASS: new topic/retry exclude old history from actual native HTTP requests, preserve records across restart, Alt+Enter saves only, and connection modals block shortcuts");
 } catch (error) {
   console.error("Keyboard verification failure:", await evaluate("({ title: document.querySelector('#settings-page-title')?.innerText, draft: document.querySelector('.composer textarea')?.value, requests: window.__shortcutRequests, error: document.querySelector('.chat-error')?.innerText })")); throw error;
 } finally {
   if (verified) {
     await command("Debugger.disable"); await evaluate("if (window.__shortcutSetItem) Storage.prototype.setItem = window.__shortcutSetItem");
     await evaluate("document.querySelector('[aria-label=\"停止生成\"]')?.click()"); await waitFor("!document.querySelector('[aria-label=\"停止生成\"]')", 100);
-    for (const [key, original] of [[preferencesKey, originalPreferences], [chatKey, originalChat]]) await evaluate(original === null ? `localStorage.removeItem('${key}')` : `localStorage.setItem('${key}', ${JSON.stringify(original)})`);
+    for (const [key, original] of [[preferencesKey, originalPreferences], [chatKey, originalChat]]) await evaluate(key === "modelport.chat.v1" ? restoreChatStorageExpression(original) : original === null ? `localStorage.removeItem('${key}')` : `localStorage.setItem('${key}', ${JSON.stringify(original)})`);
     await command("Emulation.clearDeviceMetricsOverride"); await reload();
   }
-  close();
+  if (fixtureProvider) await evaluate(`window.__TAURI_INTERNALS__.invoke('remove_custom_provider', { provider: ${JSON.stringify(fixtureProvider.id)} })`).catch(() => {});
+  close(); fixtureServer.closeAllConnections();
+  if (fixtureServer.listening) await new Promise(resolve => fixtureServer.close(resolve));
 }

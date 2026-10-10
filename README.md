@@ -2,7 +2,7 @@
 
 ModelPort（模型港）是一款本地优先的多模型 AI 桌面客户端。软件本身不提供模型能力，用户可以连接自己的云端 API Key，或使用 Ollama 等本地模型服务。
 
-当前版本：**0.11.0**。目前仅在 Windows 桌面环境验证；不承诺 macOS / Linux 可用。
+当前版本：**0.12.0**。目前仅在 Windows x64 桌面环境验证；不承诺 macOS / Linux 可用。
 
 [使用与开发](#获取源码与开发) · [GitHub 上传与发布](./docs/GITHUB.md) · [贡献指南](./CONTRIBUTING.md) · [安全政策](./SECURITY.md) · [更新记录](./CHANGELOG.md) · [MIT 许可证](./LICENSE)
 
@@ -10,15 +10,17 @@ ModelPort（模型港）是一款本地优先的多模型 AI 桌面客户端。�
 
 ## 下载与启动
 
-仓库维护者发布版本后，可从本仓库的 **Releases** 下载 Windows 程序；当前源码仓库不包含可执行文件。下载程序无需安装 Node.js 或 Rust，但 Windows 需要 WebView2 运行时。请只从可信发布来源获取程序，核对发布者提供的 SHA-256；当前没有代码签名或签名安装包保证。
+从 [最新发布页](https://github.com/zhang124zb/modelport/releases/latest) 获取 Windows x64 便携包，也可 [直接下载 0.12.0 ZIP](https://github.com/zhang124zb/modelport/releases/download/v0.12.0/ModelPort-0.12.0-windows-x64.zip)。源码仓库不存放可执行文件；程序包通过 Releases 单独分发。
 
-可直接打开 `ModelPort.exe`，或双击下载包中的 `启动 ModelPort.cmd`。启动文件支持同目录的 `ModelPort.exe`，也支持源码目录下的 `release/ModelPort.exe`；只克隆源码后不能直接双击启动。自己编译的步骤见下文。
+下载后先完整解压，再双击“启动 ModelPort.cmd”或“ModelPort.exe”。无需安装 Node.js 或 Rust，但 Windows 需要 WebView2 运行时。请只从可信发布来源获取程序，核对同一发布页中的 SHA-256；当前没有代码签名或签名安装包保证，不能为了运行程序关闭系统防护。
+
+启动文件支持同目录的 `ModelPort.exe`，也支持源码目录下的 `release/ModelPort.exe`；只克隆源码后不能直接双击启动。自己编译的步骤见下文。
 
 ## 当前进度
 
 当前版本是可本地启动的聊天版本，已经包含：
 
-- 自动保存的本地会话、会话切换与删除
+- 分会话保存的本地聊天、会话切换与删除；长对话按需加载更早消息
 - 新对话与图像生成入口
 - 多模型选择菜单
 - 向 OpenAI、DeepSeek、Google Gemini、Anthropic Claude、通义千问、Kimi、本机 Ollama 及自定义 OpenAI 兼容服务发送真实文本对话
@@ -71,16 +73,28 @@ Skills 首版只支持指令内容，不执行脚本或读取关联资源；云�
 
 ## 获取源码与开发
 
-已验证的开发环境为 Windows、Node.js 24 和 Rust 1.98.1。先按 [Tauri 官方前置要求](https://v2.tauri.app/start/prerequisites/)安装 Rust 的 MSVC 工具链、Microsoft C++ Build Tools（含 Windows SDK）及 WebView2；仓库固定 Rust 工具链版本，更新版本应连同测试一起审查。以下命令中的仓库地址需替换为实际 GitHub 地址。在 PowerShell 中运行：
+已验证的开发环境为 Windows、Node.js 24 和 Rust 1.98.1。先按 [Tauri 官方前置要求](https://v2.tauri.app/start/prerequisites/)安装 Rust 的 MSVC 工具链、Microsoft C++ Build Tools（含 Windows SDK）及 WebView2；仓库固定 Rust 工具链版本，更新版本应连同测试一起审查。在 PowerShell 中运行：
 
 ```powershell
-git clone "https://github.com/OWNER/REPOSITORY.git" modelport
+git clone "https://github.com/zhang124zb/modelport.git" modelport
 cd modelport
 npm ci
 npm run tauri dev
 ```
 
 `npm ci` 根据已提交的 `package-lock.json` 安装前端依赖；后续依赖未变化时，无需每次启动都重装。仅预览界面可运行 `npm run dev`；检查前端生产构建可运行 `npm run build`。浏览器预览无法发送真实模型请求。
+
+开发 / 测试默认采用低缓存模式：不生成 Rust 调试符号与增量缓存，开发检查仍保留。磁盘占用会降低，但仍有依赖编译产物，下次修改编译可能更慢，原生源码调试的信息较少。发布构建策略不变，普通用户运行发布程序不会产生 Rust 编译缓存。
+
+只查看本项目缓存大小，或明确清理可重新生成的调试产物（先关闭调试程序并结束构建）：
+
+```powershell
+pwsh -NoProfile -File .\scripts\manage-build-cache.ps1
+pwsh -NoProfile -File .\scripts\manage-build-cache.ps1 -CleanDebug -WhatIf
+pwsh -NoProfile -File .\scripts\manage-build-cache.ps1 -CleanDebug
+```
+
+清理保留源码、前端依赖、`release/` 发布程序及发布缓存；下次开发需重新编译。低缓存说明、长对话策略与合成样本基准见 [性能与构建缓存](./docs/PERFORMANCE.md)。
 
 ## 开发检查
 
@@ -104,7 +118,7 @@ npm run check:repo
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-portable.ps1
 ```
 
-脚本会调用 Tauri 构建，并将程序放到 `release/ModelPort.exe`，同时复制启动文件、项目许可证和第三方许可文本。之后双击 [启动 ModelPort.cmd](./启动%20ModelPort.cmd) 即可运行，无需开发服务器。发布时按 [GitHub 发布指南](./docs/GITHUB.md)打包 `release/` 中的指定文件，不包含旧版归档或测试产物。`release/` 中的程序和 `src-tauri/target/` 中的编译缓存不属于源码，Git 会忽略它们。运行该程序的 Windows 电脑需要 WebView2 运行时。
+脚本会调用 Tauri 构建，将程序放到 `release/ModelPort.exe`，并生成 `release/ModelPort-<版本>-windows-x64.zip`。便携包只包含程序、启动文件、使用说明、许可证、SHA-256 清单和构建信息，不包含旧版归档、测试产物、缓存或用户数据。解压后双击 [启动 ModelPort.cmd](./启动%20ModelPort.cmd) 即可运行，无需开发服务器。运行电脑需要 WebView2 运行时；没有 Node.js / Rust 也可以使用。发布指南见 [GitHub 文档](./docs/GITHUB.md)。
 
 若 `release/ModelPort.exe` 已存在且内容不同，脚本会停止，保护旧文件。确认更新时运行：
 
@@ -112,9 +126,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-portable.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-portable.ps1 -ReplaceExisting
 ```
 
-脚本会先把旧程序移入 `release/archive/`，再放入新程序；若新旧程序文件相同，则不替换程序，但仍刷新附带的启动文件与许可证声明。
+脚本会先把旧程序 / 同名旧 ZIP 保留到 `release/archive/`，再放入新文件；若程序相同，不替换 EXE，但仍刷新说明和许可。校验 ZIP 可运行 `pwsh -NoProfile -File scripts/verify-portable-package.ps1 -PackagePath release/ModelPort-0.12.0-windows-x64.zip`。校验值不等于代码签名，目前程序未签名。
 
 ## 桌面回归检查
+
+已完成构建且安装 Node.js 24 / PowerShell 7 / WebView2 时，一键运行：
+
+```powershell
+npm run test:desktop
+```
+
+自动启动独立 WebView 测试窗口，串行检查弹窗遮罩、12 类设置、快捷键 / 搜索、聊天恢复、停止生成、长历史、模型连接、MCP 授权和输入区布局。模型回复采用临时本机 HTTP 服务，无需真实 API Key 或已安装 Ollama 模型。失败停止后续检查，记录存入已忽略的 `release/desktop-regression-*`，最后只关闭本次测试窗口。原生配置中临时创建的提供商 / MCP 服务按 UUID 清理；强制终止测试可能留下临时配置，详见 [桌面回归文档](./docs/DESKTOP_TESTS.md)。
+
+检查调试构建可运行 `npm run test:desktop -- -Executable src-tauri/target/debug/modelport.exe`。只有基础运行要求齐全才能执行，GitHub 现有 CI 仍运行离线逻辑 / 原生测试，不自动启动桌面界面；本机一键回归不代表已验证 GitHub 托管运行器的 GUI 环境。
+
+以下原有检查仍需要真实 Ollama，用于额外集成验证：
 
 本机 Ollama 已运行并安装模型时，可用 Node.js 24 和独立 WebView 数据目录检查默认模型、弹窗遮罩、新建对话和历史模型恢复：
 

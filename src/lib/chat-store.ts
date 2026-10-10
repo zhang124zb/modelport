@@ -25,6 +25,18 @@ export type ChatState = {
 };
 
 const storageKey = "modelport.chat.v1";
+const indexKey = "modelport.chat.v2";
+const conversationPrefix = "modelport.chat.v2.conversation.";
+const recoveryWarning = "聊天记录读取异常，已暂停保存和发送，原始数据未覆盖。请在常规设置中导出原始记录，再从备份恢复或明确重置。";
+let chatStorageError = "";
+type StoredConversation = { conversation: Conversation; key: string };
+let storedConversations = new Map<string, StoredConversation>();
+let storedRecordKeys = new Set<string>();
+let lastIndex: string | null = null;
+let lastLegacy: string | null = null;
+let initialized = false;
+
+export type ChatLoadResult = ChatState & { error?: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -132,27 +144,153 @@ function normalizeRetrieval(value: unknown): KnowledgeContext | undefined {
   return { base, sources };
 }
 
-export function loadChatState(): ChatState {
+export function loadChatState(): ChatLoadResult {
+  chatStorageError = "";
+  initialized = true;
+  storedConversations = new Map();
+  storedRecordKeys = new Set();
   try {
-    const stored = window.localStorage.getItem(storageKey);
-    if (!stored) return { conversations: [], activeConversationId: null };
+    lastIndex = window.localStorage.getItem(indexKey);
+    lastLegacy = window.localStorage.getItem(storageKey);
+    if (lastIndex !== null && lastLegacy !== null) chatStorageError = recoveryWarning;
+    const stored = lastIndex ?? lastLegacy;
+    if (stored === null) return { conversations: [], activeConversationId: null };
     const parsed: unknown = JSON.parse(stored);
     if (!isRecord(parsed) || !Array.isArray(parsed.conversations)) {
-      return { conversations: [], activeConversationId: null };
+      throw new Error("Invalid chat state");
     }
-    const conversations = parsed.conversations.filter(isConversation).map(normalizeConversation);
+    let conversations: Conversation[];
+    if (lastIndex !== null) {
+      if (parsed.format !== "modelport-chat-store" || parsed.version !== 2) throw new Error("Invalid chat index");
+      conversations = [];
+      const ids = new Set<string>();
+      for (const entry of parsed.conversations) {
+        try {
+          if (!isRecord(entry) || typeof entry.id !== "string" || ids.has(entry.id)
+            || typeof entry.key !== "string" || !entry.key.startsWith(conversationPrefix)) throw new Error("Invalid chat reference");
+          ids.add(entry.id);
+          storedRecordKeys.add(entry.key);
+          const raw = window.localStorage.getItem(entry.key);
+          const value: unknown = raw === null ? null : JSON.parse(raw);
+          if (!isConversation(value) || value.id !== entry.id) throw new Error("Invalid stored conversation");
+          const conversation = normalizeConversation(value);
+          conversations.push(conversation);
+          storedConversations.set(conversation.id, { conversation, key: entry.key });
+        } catch { chatStorageError = recoveryWarning; }
+      }
+    } else {
+      conversations = parsed.conversations.filter(isConversation).map(normalizeConversation);
+    }
     const activeConversationId = typeof parsed.activeConversationId === "string"
       && conversations.some((conversation) => conversation.id === parsed.activeConversationId)
       ? parsed.activeConversationId
       : null;
+    if (chatStorageError || conversations.length !== parsed.conversations.length) {
+      chatStorageError = recoveryWarning;
+      return { conversations, activeConversationId, error: chatStorageError };
+    }
     return { conversations, activeConversationId };
   } catch {
-    return { conversations: [], activeConversationId: null };
+    chatStorageError = recoveryWarning;
+    return { conversations: [], activeConversationId: null, error: chatStorageError };
   }
 }
 
 export function saveChatState(state: ChatState): void {
-  window.localStorage.setItem(storageKey, JSON.stringify(state));
+  if (!initialized) loadChatState();
+  // Protect every writer, including a pending save during unmount.
+  if (chatStorageError) throw new Error(chatStorageError);
+  writeChatState(state);
+}
+
+export function readRawChatState(): string {
+  const rawIndex = window.localStorage.getItem(indexKey);
+  if (rawIndex !== null) {
+    const records: Record<string, string | null> = {};
+    for (let index = 0; index < window.localStorage.length; index++) {
+      const key = window.localStorage.key(index);
+      if (key?.startsWith(conversationPrefix)) records[key] = window.localStorage.getItem(key);
+    }
+    return JSON.stringify({ format: "modelport-chat-recovery", version: 1,
+      index: rawIndex, records, legacy: window.localStorage.getItem(storageKey) }, null, 2);
+  }
+  const stored = window.localStorage.getItem(storageKey);
+  if (stored === null) throw new Error("没有可导出的原始聊天记录；如果存储仍无法读取，请先检查系统存储权限。");
+  return stored;
+}
+
+// Only an explicitly confirmed recovery/reset may replace protected data.
+export function recoverChatState(state: ChatState): void {
+  if (!isRecord(state) || !Array.isArray(state.conversations) || !state.conversations.every(isConversation)
+    || (state.activeConversationId !== null && (typeof state.activeConversationId !== "string"
+      || !state.conversations.some(conversation => conversation.id === state.activeConversationId)))) {
+    throw new Error("恢复数据无效，原始记录未修改。");
+  }
+  writeChatState(state, true);
+  chatStorageError = "";
+}
+
+export function getChatStorageError(): string { return chatStorageError; }
+
+function writeChatState(state: ChatState, recovery = false): void {
+  const storage = window.localStorage;
+  const currentLegacy = storage.getItem(storageKey);
+  if (!recovery && (storage.getItem(indexKey) !== lastIndex || currentLegacy !== lastLegacy)) {
+    chatStorageError = "聊天存储已被其他窗口修改，已暂停保存和发送。请关闭其他窗口后重新打开应用；原始数据未覆盖。";
+    throw new Error(chatStorageError);
+  }
+  const entries = new Map<string, StoredConversation>();
+  const oldKeys = new Set(storedRecordKeys);
+  if (recovery) {
+    for (let index = 0; index < storage.length; index++) {
+      const key = storage.key(index);
+      if (key?.startsWith(conversationPrefix)) oldKeys.add(key);
+    }
+  }
+  const staged: string[] = [];
+  let nextIndex: string;
+  try {
+    for (const conversation of state.conversations) {
+      if (entries.has(conversation.id)) throw new Error("存在重复会话标识，尚未保存。");
+      const previous = recovery ? undefined : storedConversations.get(conversation.id);
+      if (previous?.conversation === conversation) entries.set(conversation.id, previous);
+      else {
+        const key = conversationPrefix + crypto.randomUUID();
+        staged.push(key);
+        storage.setItem(key, JSON.stringify(conversation));
+        entries.set(conversation.id, { conversation, key });
+      }
+    }
+    nextIndex = JSON.stringify({ format: "modelport-chat-store", version: 2,
+      activeConversationId: state.activeConversationId, conversations: [...entries].map(([id, entry]) => ({ id, key: entry.key })) });
+    // Commit the index last: failed writes always leave the previous records readable.
+    if (!recovery && (storage.getItem(indexKey) !== lastIndex || storage.getItem(storageKey) !== lastLegacy)) {
+      chatStorageError = "聊天存储已被其他窗口修改，已暂停保存和发送。请重新打开本窗口；原始记录未覆盖。";
+      throw new Error(chatStorageError);
+    }
+    if (nextIndex !== lastIndex) storage.setItem(indexKey, nextIndex);
+  } catch (error) {
+    for (const key of staged) { try { storage.removeItem?.(key); } catch { /* Uncommitted records are never read. */ } }
+    throw error;
+  }
+  const retained = new Set([...entries.values()].map(entry => entry.key));
+  for (const key of oldKeys) {
+    if (!retained.has(key)) { try { storage.removeItem?.(key); } catch { /* A leftover record cannot hide the committed data. */ } }
+  }
+  let legacyAfterCommit = currentLegacy;
+  try { if ((lastIndex === null || recovery) && storage.removeItem) { storage.removeItem(storageKey); legacyAfterCommit = null; } } catch { /* Keep legacy data if cleanup is unavailable. */ }
+  storedConversations = entries;
+  storedRecordKeys = retained;
+  lastIndex = nextIndex;
+  lastLegacy = legacyAfterCommit;
+  initialized = true;
+}
+
+export function withoutEmptyAssistantMessages(conversations: Conversation[]): Conversation[] {
+  return conversations.map(conversation => {
+    const messages = conversation.messages.filter(message => message.role !== "assistant" || message.content.length > 0 || message.toolTrace?.length || message.toolRounds?.length);
+    return messages.length === conversation.messages.length ? conversation : { ...conversation, messages };
+  });
 }
 
 export const maxChatBackupBytes = 10 * 1024 * 1024;

@@ -26,19 +26,35 @@
 
 支持格式 `modelport-chat-backup`、`version: 1`；最大 10 MiB、5000 会话、20000 条消息、单条正文 200000 字符。拒绝非法角色 / 模型、重复标识及超限内容；未知附加字段不进入备份。生成中消息标记为中断，不当作完整回复。导入 / 清空先持久化，失败则界面和原会话不改变。仅备份导出不联网，不发送聊天给模型。
 
+本机存储使用 `modelport.chat.v2` 小索引和独立会话记录，正常聊天备份格式不变。旧 `modelport.chat.v1` 在首次成功保存后迁移；读取本身不删除旧数据，迁移失败保留旧记录。只重新写入改变的会话，不在每段回复时重写所有聊天。
+
+存储仍受 WebView 的 localStorage 容量限制，不是无限容量数据库。为避免失败写入破坏上一版，新记录先暂存再提交索引，短时需要容纳新旧两版会话；接近限额时会告警并保留旧版。大文件导入前请先备份，备份格式的 10 MiB 上限不保证本机一定有足够存储空间。不要同时在多个窗口修改同一份聊天；检测到索引被其他窗口修改时暂停本窗口保存，请关闭其他窗口后重新打开。此检查不是跨窗口的数据库事务锁。
+
 界面使用浏览器文件输入和 WebView2 下载能力，无新增文件系统权限；下载对话由宿主管理，参考 [Microsoft WebView2 下载事件](https://learn.microsoft.com/en-us/dotnet/api/microsoft.web.webview2.core.corewebview2.downloadstarting)。
+
+### 聊天读取异常时的保护与恢复
+
+首次使用（存储键不存在）与读取失败分开处理。JSON 损坏、存储无法访问、索引引用缺失、任一会话必需字段无效或新旧存储同时存在时，主界面提示并暂停自动保存和发送；仍可查看能读取的会话，但不代表所有原始记录。退出时的待保存任务同样不能覆盖受保护数据。可选工具历史损坏仍只移除无效工具元数据，保留聊天正文。
+
+在常规设置先“导出原始记录”：生成 `ModelPort-chats-recovery-<时间>.json`，不做修复或过滤。旧 v1 导出保留原始文本；v2 导出为 `modelport-chat-recovery`、版本 1 的恢复封装，`index`、`records` 和 `legacy` 保留索引、各会话和旧记录的原始字符串，损坏文本也不丢弃。请确认下载成功；旧原始文件可能不是有效 JSON，恢复封装也不能作为正常聊天备份导入。这些文件可能含私密内容，不应公开上传。若系统仍拒绝读取，导出会失败，应先保留应用数据或解决存储权限问题。
+
+恢复有两种明确操作：导入有效的 ModelPort 聊天备份并确认覆盖受保护记录（保留当前能读取的会话），或输入“重置对话”清空原记录。两者都可能丢弃无法读取的部分，不能直接撤销，务必先保存原始记录并关闭其他窗口。只有新数据成功写入才解除保护；取消、备份校验失败或写入失败都不覆盖原记录。保护期间禁止普通备份导出和闲置附件清理，以免把部分记录误当完整备份或误删原聊天引用的附件。
 
 ## 开发入口
 
 - `src/lib/general-settings.ts`：配置类型、默认值、校验、版本化存储与主题解析。
 - `GeneralSettingsPage.tsx`：配置草稿、文件预览、数据操作确认、保存与公共退出保护。
 - `SettingsPageProps`：`generalSettings`、`generalSettingsError`、`onSaveGeneralSettings`、`chatData`、`chatBusy`、聊天管理回调和 `onCleanAttachments`。
-- `src/App.tsx`：启动初始化、单个系统主题监听器、外观应用与聊天数据事务；不修改原生凭据、技能或知识库。
+- `src/App.tsx`：单个系统主题监听器、外观应用与管理入口；`features/chat/useChatHistory.ts` 负责启动聊天恢复、节流保存和先写入后更新界面的管理操作，不修改原生凭据、技能或知识库。
 - `src/theme.css`：适配现有 `.dark` 组件约定、桌面管理页及减少动态效果；浅色保持原配色。
-- `src/lib/chat-store.ts`：只保留已知字段的会话归一化、JSON 序列化 / 校验及新 ID 副本合并，沿用旧聊天存储键。
+- `src/lib/chat-store.ts`：会话归一化、v2 索引 / 独立记录、旧数据迁移、损坏保护和原始导出；正常备份保持 v1 校验及新 ID 副本合并。
 
 ## 验证
 
 - `node scripts/verify-general-settings-store.mjs`：Node.js 24，配置校验 / 损坏保护 / 保存失败、主题选择、备份字段与消息状态、角色 / 模型 / 大小 / 重复 ID、引用保留与副本合并；不触碰实际资料。
+- `node scripts/verify-chat-recovery-store.mjs`：模拟内存存储，校验首次启动、损坏 / 部分无效 / 读取失败保护、原始记录精确导出、恢复失败不解除保护和明确重置；不读取本机聊天。
+- `node scripts/verify-chat-performance-store.mjs`：迁移失败、分会话写入 / 索引提交失败、损坏子记录、新旧数据冲突、其他窗口修改、明确恢复及流式批量更新；见 [性能与构建缓存](./PERFORMANCE.md)。
+- `node scripts/verify-code-highlighter.mjs`：真实 Shiki 检查长度和首尾相同的不同代码、并发更新、语言别名、纯文本回退和彩色高亮。
+- `node scripts/verify-chat-recovery.mjs <调试端口>`：全新隔离 WebView，验证启动 / 重启不覆盖、阻止发送和附件清理、真实原始记录下载、取消 / 无效 / 写入失败保护、确认恢复 / 重置和两个相似代码块的实际彩色显示。测试文件只在忽略的 `release/chat-recovery-check-*` 中生成，结束恢复测试前聊天。
 - `node scripts/verify-general-settings.mjs <调试端口> [深色设置截图] [深色聊天截图]`：全新隔离 WebView；退出 / 保存失败保护、系统主题变化、重启、12 分类与最小窗口、实际下载文件、文件选择与预览、合并导入 / 清空失败 / 从备份恢复、原生库保持不变、真实 Ollama 生成期间保护。下载固定在脚本新建的 `release/general-settings-check-*` 测试目录；结束恢复测试前配置与聊天。
 - 同时运行原有快捷键、对话设置、技能、知识库及输入区桌面回归。

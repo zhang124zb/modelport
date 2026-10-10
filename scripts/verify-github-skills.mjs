@@ -1,3 +1,4 @@
+import { desktopChatStateExpression } from "./chat-storage-fixture.mjs";
 // Run against a fresh isolated WebView profile with internet access. Never replaces existing skills.
 // Example: node scripts/verify-github-skills.mjs 9350 [github-skills.png]
 import assert from "node:assert/strict";
@@ -41,7 +42,7 @@ let baseline;
 const createdIds = new Set();
 try {
   await waitFor("Boolean(document.querySelector('.manage-skills'))");
-  const state = JSON.parse(await evaluate("localStorage.getItem('modelport.chat.v1')") ?? "{}");
+  const state = await evaluate(desktopChatStateExpression);
   assert.equal(state.conversations?.length ?? 0, 0, "Use a fresh isolated profile, not real chats");
   baseline = await invoke("list_skills");
   assert.ok(!baseline.some(skill => skill.name === "webapp-testing"), "Do not replace an existing webapp-testing skill");

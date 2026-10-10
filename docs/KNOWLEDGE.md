@@ -44,7 +44,7 @@ Tauri 应用数据目录下的 `knowledge/knowledge-state.v1.json` 保存知识�
 - `src/features/settings/useSettingsLeaveGuard.ts`：知识库与 Skills 共用的设置 / 原生窗口退出保护。
 - `src/components/KnowledgeSources.tsx`：聊天历史中的只读来源快照。
 - `src/lib/modelport.ts`：类型和原生接口；只传 ID / 版本，过滤摘要的多余字段。
-- `src/lib/chat-store.ts`、`src/App.tsx`：会话选择、版本确认、来源持久化及删除后的选择清理。
+- `src/App.tsx`：会话选择、版本确认及删除后的选择清理；`features/chat/useChatLifecycle.ts` 接收来源，`useChatHistory.ts` / `src/lib/chat-store.ts` 负责随消息持久化。
 
 原生命令：
 

@@ -419,6 +419,9 @@ textarea:focus-visible {
   text-align: center;
 }
 
+.load-older-messages { display: block; margin: 0 auto 24px; padding: 9px 16px; border: 1px solid #dce6f0; border-radius: 12px; color: #267dcc; background: #edf5ff; cursor: pointer; }
+.dark .load-older-messages { color: #a7d3ff; background: #1d3045; border-color: #38536d; }
+
 .message { display: flex; gap: 12px; margin-bottom: 25px; }
 .message.user { justify-content: flex-end; }
 

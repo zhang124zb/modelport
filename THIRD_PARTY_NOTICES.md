@@ -8,14 +8,14 @@ ModelPort 自有代码采用根目录的 [MIT 许可证](./LICENSE)。该许可�
 - 本地代码：`src/components/ai-elements/message.tsx`。
 - Copyright 2023 Vercel, Inc.
 - 许可证：Apache License, Version 2.0；完整文本保留于 [licenses/Apache-2.0.txt](./licenses/Apache-2.0.txt)，[上游许可证](https://github.com/vercel/ai-elements/blob/main/LICENSE)。
-- 本地适配：组件与工具函数的导入路径改为 ModelPort 项目路径。复制来源未记录固定上游提交，当前声明不推定所有历史版本的文件或授权相同。
+- 本地适配：只保留实际使用的 `MessageResponse`，移除未接入的消息工具栏 / 分支组件，使用本地安全高亮适配；组件与工具函数的导入路径改为 ModelPort 项目路径。复制来源未记录固定上游提交，当前声明不推定所有历史版本的文件或授权相同。
 
 此复制代码仍按其 Apache-2.0 许可证分发，不因 ModelPort 根目录采用 MIT 而变为 MIT。继续修改或分发时保留声明、许可证及适用的上游通知要求。
 
 ## shadcn/ui
 
 - 来源：[shadcn-ui/ui](https://github.com/shadcn-ui/ui)，[上游许可证](https://github.com/shadcn-ui/ui/blob/main/LICENSE.md)。
-- 本地代码：`src/components/ui/` 下的界面组件，按本项目导入路径适配。
+- 旧版复制的 `src/components/ui/` 按钮、分组、分隔线和提示组件已移除；仍使用 `shadcn/tailwind.css` 样式依赖，保留版权与许可声明。
 - 许可证：MIT；完整版权与许可声明如下。
 
 ```text

@@ -1,3 +1,4 @@
+import { desktopChatStateExpression, chatStorageRawExpression, legacyChatSeedExpression, restoreChatStorageExpression } from "./chat-storage-fixture.mjs";
 // Fresh isolated WebView only. No cloud requests or native library writes.
 // Example: node scripts/verify-chat-settings.mjs 9350 [settings.png]
 import assert from "node:assert/strict";
@@ -11,7 +12,7 @@ const exceptions = [];
 on("Page.javascriptDialogOpening", () => { dialogs++; void command("Page.handleJavaScriptDialog", { accept: acceptDialog }); });
 on("Runtime.exceptionThrown", ({ exceptionDetails }) => exceptions.push(exceptionDetails.text));
 await command("Page.enable"); await command("Runtime.enable");
-const stored = key => evaluate(`localStorage.getItem(${JSON.stringify(key)})`);
+const stored = key => evaluate(key === "modelport.chat.v1" ? chatStorageRawExpression : `localStorage.getItem(${JSON.stringify(key)})`);
 const select = (id, value) => evaluate(`{ const el = document.getElementById('${id}'); el.value = ${JSON.stringify(value)}; el.dispatchEvent(new Event('change', { bubbles: true })); }`);
 async function key(key, code, windowsVirtualKeyCode, modifiers = 0) {
   for (const type of ["keyDown", "keyUp"]) await command("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode, modifiers, ...(type === "keyDown" && key === "Enter" ? { text: "\r" } : {}) });
@@ -43,7 +44,7 @@ try {
   await waitFor("Boolean(document.querySelector('.model-trigger'))");
   originalPreferences = await stored(preferencesKey); originalChat = await stored(chatKey);
   assert.equal(originalPreferences, null, "Use a fresh isolated WebView profile");
-  assert.equal(JSON.parse(originalChat ?? "{}").conversations?.length ?? 0, 0, "Never run on real chats"); verified = true;
+  assert.equal((await evaluate(desktopChatStateExpression)).conversations?.length ?? 0, 0, "Never run on real chats"); verified = true;
   await openSettings("键盘快捷键"); await select("chat-send-shortcut", "ctrl-enter");
   await evaluate("document.querySelector('.keyboard-settings-save').click()"); await closeSettings();
   const keyboardSaved = await stored(preferencesKey);
@@ -84,7 +85,7 @@ try {
   const model = { id: names[0], name: names[0], provider: "ollama", tone: "#111827", label: "Q" };
   const seed = { activeConversationId: "chat-settings-check", conversations: [{ id: "chat-settings-check", title: "设置验证", date: "10/07", model,
     messages: Array.from({ length: 3 }, (_, i) => [{ id: `q${i}`, role: "user", content: `HISTORY_QUESTION_${i}` }, { id: `a${i}`, role: "assistant", content: `**HISTORY_MARKER_${i}**` }]).flat() }] };
-  await evaluate(`localStorage.setItem('${chatKey}', ${JSON.stringify(JSON.stringify(seed))})`); await reload();
+  await evaluate(legacyChatSeedExpression(JSON.stringify(seed))); await reload();
   await waitFor("document.querySelectorAll('.message-plain-text').length === 3");
   assert.ok(await evaluate("[...document.querySelectorAll('.message-bubble')].every(el => getComputedStyle(el).fontSize === '24px')"));
   assert.equal(await evaluate("document.querySelector('.message-plain-text').textContent"), "**HISTORY_MARKER_0**");
@@ -136,7 +137,7 @@ try {
   await evaluate("[...document.querySelectorAll('.chat-settings-actions button')].find(button => button.innerText === '恢复默认').click()");
   assert.equal(JSON.parse(await stored(preferencesKey)).contextTurns, 1); await save(); await closeSettings();
   assert.equal(JSON.parse(await stored(preferencesKey)).contextTurns, 20);
-  const historyBefore = JSON.parse(await stored(chatKey));
+  const historyBefore = await evaluate(desktopChatStateExpression);
   await evaluate(`localStorage.setItem('${preferencesKey}', 'broken')`); await reload(); await trackRequests();
   await fill(".composer textarea", "This message must not be sent while preferences are unreadable.");
   await evaluate("document.querySelector('[aria-label=\"发送消息\"]').click()");
@@ -144,7 +145,7 @@ try {
   assert.equal(await evaluate("window.__chatSettingsRequests.length"), 0);
   assert.equal(await stored(preferencesKey), "broken");
   assert.ok(await evaluate("document.querySelector('.chat-settings-notice').innerText.includes('原数据未覆盖')"));
-  await save(); await closeSettings(); assert.deepEqual(JSON.parse(await stored(chatKey)), historyBefore);
+  await save(); await closeSettings(); assert.deepEqual(await evaluate(desktopChatStateExpression), historyBefore);
   await evaluate("document.querySelector('.composer-tools [aria-label=\"对话设置\"]').click()");
   await waitFor("Boolean(document.querySelector('#chat-system-prompt'))"); await closeSettings();
   assert.deepEqual(exceptions, []);
@@ -156,7 +157,7 @@ try {
   if (verified) {
     await command("Debugger.disable");
     await evaluate("if (window.__settingsOriginalSetItem) Storage.prototype.setItem = window.__settingsOriginalSetItem");
-    for (const [key, original] of [[preferencesKey, originalPreferences], [chatKey, originalChat]]) await evaluate(original === null ? `localStorage.removeItem('${key}')` : `localStorage.setItem('${key}', ${JSON.stringify(original)})`);
+    for (const [key, original] of [[preferencesKey, originalPreferences], [chatKey, originalChat]]) await evaluate(key === "modelport.chat.v1" ? restoreChatStorageExpression(original) : original === null ? `localStorage.removeItem('${key}')` : `localStorage.setItem('${key}', ${JSON.stringify(original)})`);
     await command("Emulation.clearDeviceMetricsOverride"); await reload();
   }
   close();

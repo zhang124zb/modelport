@@ -1,8 +1,9 @@
+import { desktopChatStateExpression, chatStorageRawExpression, restoreChatStorageExpression } from "./chat-storage-fixture.mjs";
 // Fresh isolated WebView only; localhost OpenAI-compatible fixture, never real cloud credentials.
 // node scripts/verify-providers.mjs <CDP-port> [screenshot.png]
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { connectDesktop } from "./desktop-client.mjs";
 const requests = [], intervals = new Set(), ownIds = new Set();
 const server = createServer(async (req, res) => {
@@ -39,8 +40,8 @@ try {
   on("Page.javascriptDialogOpening", () => void command("Page.handleJavaScriptDialog", { accept: acceptDialog }));
   on("Runtime.exceptionThrown", ({ exceptionDetails }) => exceptions.push(exceptionDetails.text));
   await command("Page.enable"); await command("Runtime.enable");
-  originals = await Promise.all(keys.map(key => evaluate(`localStorage.getItem(${JSON.stringify(key)})`)));
-  assert.equal(JSON.parse(originals[0] ?? "{}").conversations?.length ?? 0, 0, "Use a fresh isolated WebView, never real chats"); verified = true;
+  originals = await Promise.all(keys.map(key => evaluate(key === "modelport.chat.v1" ? chatStorageRawExpression : `localStorage.getItem(${JSON.stringify(key)})`)));
+  assert.equal((await evaluate(desktopChatStateExpression)).conversations?.length ?? 0, 0, "Use a fresh isolated WebView, never real chats"); verified = true;
   const invoke = (name, args = {}) => evaluate(`window.__TAURI_INTERNALS__.invoke(${JSON.stringify(name)}, ${JSON.stringify(args)})`);
   const fill = async (selector, text) => { await evaluate(`{ const el = document.querySelector(${JSON.stringify(selector)}); el.focus(); el.select(); }`); await command("Input.insertText", { text }); };
   const section = async label => { await evaluate(`[...document.querySelectorAll('.settings-nav button')].find(button => button.innerText.trim() === ${JSON.stringify(label)}).click()`); await waitFor(`document.querySelector('#settings-page-title').innerText === ${JSON.stringify(label)}`); };
@@ -55,9 +56,10 @@ try {
   };
   const selectModel = async id => { await evaluate("document.querySelector('.model-trigger').click()"); await evaluate(`[...document.querySelectorAll('.model-menu button')].find(button => button.querySelector('strong')?.innerText === ${JSON.stringify(id)}).click()`); };
   const send = async text => { await fill(".composer textarea", text); await evaluate("document.querySelector('[aria-label=\"发送消息\"]').click()"); };
-  const stored = () => evaluate("JSON.parse(localStorage.getItem('modelport.chat.v1') ?? '{}')");
+  const stored = () => evaluate(desktopChatStateExpression);
   await settings();
-  assert.ok(await evaluate("document.querySelector('.utility-nav .muted').innerText.includes('0.10.0')"), "Desktop must contain the latest embedded frontend");
+  const expectedVersion = JSON.parse(readFileSync("package.json", "utf8")).version;
+  assert.ok(await evaluate(`document.querySelector('.utility-nav .muted').innerText.includes(${JSON.stringify(expectedVersion)})`), "Desktop must contain the latest embedded frontend");
   const labels = await evaluate("[...document.querySelectorAll('.provider-card strong')].map(el => el.innerText)");
   for (const label of ["Google Gemini", "Anthropic Claude", "通义千问 · 阿里云百炼", "Kimi · Moonshot"]) assert.ok(labels.includes(label));
   await evaluate("[...document.querySelectorAll('.provider-card')].find(button => button.innerText.includes('Anthropic Claude')).click()");
@@ -89,7 +91,7 @@ try {
   assert.equal((await stored()).conversations[0].model.provider, primary);
   await selectModel("fixture-slow"); await send("测试停止生成"); await waitFor("document.querySelector('.message.assistant:last-child')?.innerText.includes('本地接口回复') && Boolean(document.querySelector('[aria-label=\"停止生成\"]'))");
   await evaluate("document.querySelector('[aria-label=\"停止生成\"]').click()"); await waitFor("!document.querySelector('.stop-button')");
-  assert.equal((await stored()).conversations[0].messages.at(-1).status, "stopped");
+  await waitFor(`${desktopChatStateExpression}.conversations[0].messages.at(-1).status === 'stopped'`);
   const beforeFailure = requests.length;
   const failure = await evaluate(`window.__TAURI_INTERNALS__.invoke('send_chat', { provider:${JSON.stringify(primary)}, model:'fixture-error', messages:[{role:'user',content:'error check'}] }).then(() => '', String)`);
   assert.match(failure, /HTTP 400/); assert.equal(requests.length, beforeFailure + 1);
@@ -122,7 +124,8 @@ try {
   if (client) {
     for (const id of ownIds) await client.evaluate(`window.__TAURI_INTERNALS__.invoke('remove_custom_provider', {provider:${JSON.stringify(id)}}).catch(() => null)`).catch(() => {});
     if (verified) {
-      for (let i = 0; i < keys.length; i++) await client.evaluate(originals[i] === null ? `localStorage.removeItem(${JSON.stringify(keys[i])})` : `localStorage.setItem(${JSON.stringify(keys[i])},${JSON.stringify(originals[i])})`).catch(() => {});
+      for (let i = 0; i < keys.length; i++) await client.evaluate(keys[i] === "modelport.chat.v1" ? restoreChatStorageExpression(originals[i]) : originals[i] === null ? `localStorage.removeItem(${JSON.stringify(keys[i])})` : `localStorage.setItem(${JSON.stringify(keys[i])},${JSON.stringify(originals[i])})`).catch(() => {});
+      await client.reload().catch(() => {});
     }
     client.close();
   }

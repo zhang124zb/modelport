@@ -5,8 +5,13 @@ import { resolve } from "node:path";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const checks = [
+  "verify-maintenance.mjs",
   "verify-chat-settings-store.mjs",
   "verify-general-settings-store.mjs",
+  "verify-chat-recovery-store.mjs",
+  "verify-chat-performance-store.mjs",
+  "benchmark-chat-store.mjs",
+  "verify-code-highlighter.mjs",
   "verify-model-defaults-store.mjs",
   "verify-providers-store.mjs",
   "verify-attachments-store.mjs",

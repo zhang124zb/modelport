@@ -31,6 +31,7 @@ assert.equal(imported.mcp, undefined); assert.deepEqual(imported.messages[1].too
 assert.equal(mergeImportedChats([], [conversation])[0].mcp, undefined);
 const malicious = JSON.parse(backup); malicious.conversations[0].messages[1].toolRounds[0].toolResults[0].id = "unpaired";
 assert.throws(() => parseChatBackup(JSON.stringify(malicious)));
+storage.delete("modelport.chat.v2");
 storage.set("modelport.chat.v1", JSON.stringify({ conversations: malicious.conversations, activeConversationId: conversation.id }));
 const recovered = loadChatState().conversations[0];
 assert.equal(recovered.messages[1].content, conversation.messages[1].content, "damaged optional tool data must not erase chat text");

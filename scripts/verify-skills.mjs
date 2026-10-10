@@ -1,3 +1,4 @@
+import { desktopChatStateExpression, chatStorageRawExpression, restoreChatStorageExpression } from "./chat-storage-fixture.mjs";
 // Run only against an isolated WebView profile. Test-created skills are removed in finally.
 // Example: node scripts/verify-skills.mjs 9350 [skills.png]
 import assert from "node:assert/strict";
@@ -48,8 +49,8 @@ let originalState;
 let baseline;
 try {
   await waitFor("Boolean(document.querySelector('#chat-skill')) && !document.querySelector('#chat-skill').disabled");
-  originalState = await evaluate("localStorage.getItem('modelport.chat.v1')");
-  assert.equal(JSON.parse(originalState ?? "{}").conversations?.length ?? 0, 0, "Use a fresh isolated WebView profile, not real chats");
+  originalState = await evaluate(chatStorageRawExpression);
+  assert.equal((await evaluate(desktopChatStateExpression)).conversations?.length ?? 0, 0, "Use a fresh isolated WebView profile, not real chats");
   baseline = await invoke("list_skills");
   assert.ok(!baseline.some((skill) => skill.name === "modelport-verification-import"), "The import fixture name must not conflict with a pre-existing skill");
   await openSkills();
@@ -92,7 +93,7 @@ try {
   // version/confirmation here, and the changed output separately in a fresh chat.
   await reply(null); assert.ok(dialogCount > beforeUpdateDialog);
   await waitFor(`document.querySelector('#chat-skill').value === ${JSON.stringify(`${updated.id}:${updated.revision}`)}`);
-  const stored = JSON.parse(await evaluate("localStorage.getItem('modelport.chat.v1')"));
+  const stored = await evaluate(desktopChatStateExpression);
   assert.equal(stored.conversations[0].messages.filter((message) => message.role === "user").at(-1).skill.revision, updated.revision);
   await evaluate("document.querySelector('.primary-actions button').click()");
   await choose(updated); await reply("MODELPORT_SKILL_UPDATED");
@@ -158,7 +159,7 @@ try {
     if (current) await invoke("remove_skill", { skill: { id: current.id, revision: current.revision } });
   }
   if (originalState !== undefined) {
-    await evaluate(originalState === null ? "localStorage.removeItem('modelport.chat.v1')" : `localStorage.setItem('modelport.chat.v1', ${JSON.stringify(originalState)})`);
+    await evaluate(restoreChatStorageExpression(originalState));
     await reload();
   }
   if (baseline) assert.deepEqual(await invoke("list_skills"), baseline, "Existing skills must not be changed by verification");

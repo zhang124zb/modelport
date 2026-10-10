@@ -21,7 +21,7 @@ const backup = serializeChatBackup({ conversations: [chat], activeConversationId
 assert.equal(JSON.parse(backup).attachmentsIncluded, false); assert.deepEqual(parseChatBackup(backup)[0].messages[0].attachments, [image]);
 assert.deepEqual(mergeImportedChats([], [chat])[0].messages[0].attachments, [image]);
 assert.deepEqual(attachmentIds([chat], [text, image]), [text.id, image.id]);
-globalThis.window = { localStorage: { getItem: () => JSON.stringify({ conversations: [chat], activeConversationId: "chat" }) } };
+globalThis.window = { localStorage: { getItem: key => key === "modelport.chat.v1" ? JSON.stringify({ conversations: [chat], activeConversationId: "chat" }) : null } };
 assert.deepEqual(loadChatState().conversations[0].messages[0].attachments, [image]);
 const input = new File(["Hello 中文"], "hello.txt", { type: "text/plain" });
 assert.deepEqual(await readAttachment(input), { filename: "hello.txt", kind: "text", data: "Hello 中文" });

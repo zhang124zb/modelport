@@ -1,3 +1,4 @@
+import { desktopChatStateExpression, chatStorageRawExpression, restoreChatStorageExpression } from "./chat-storage-fixture.mjs";
 // Use only a fresh isolated WebView profile. Only the uniquely named test knowledge base is changed.
 // Example: node scripts/verify-knowledge.mjs 9350 [knowledge.png] [reply.png]
 import assert from "node:assert/strict";
@@ -41,8 +42,8 @@ const baseName = `资料验证-${Date.now()}`;
 let originalState, baseline, baseId;
 try {
   await waitFor("Boolean(document.querySelector('#chat-knowledge')) && !document.querySelector('#chat-knowledge').disabled");
-  originalState = await evaluate("localStorage.getItem('modelport.chat.v1')");
-  assert.equal(JSON.parse(originalState ?? "{}").conversations?.length ?? 0, 0, "Use a fresh isolated profile, not real chats");
+  originalState = await evaluate(chatStorageRawExpression);
+  assert.equal((await evaluate(desktopChatStateExpression)).conversations?.length ?? 0, 0, "Use a fresh isolated profile, not real chats");
   baseline = await invoke("list_knowledge_bases");
   await openKnowledge(); await click(".knowledge-page > .knowledge-actions button", "新建知识库");
   await fill('[aria-label="知识库名称"]', baseName); await click(".knowledge-name button", "保存知识库");
@@ -65,7 +66,7 @@ try {
   await reply("What is the refund verification code in these documents? Give the exact code and cite its source.", "MODELPORT_KNOWLEDGE_VERIFIED_74291");
   await waitFor("Boolean(document.querySelector('.message-sources'))");
   assert.ok(await evaluate("document.querySelector('.message-knowledge')?.innerText.includes('资料验证')"));
-  let state = JSON.parse(await evaluate("localStorage.getItem('modelport.chat.v1')"));
+  let state = await evaluate(desktopChatStateExpression);
   const matchedId = state.activeConversationId;
   const firstSource = state.conversations[0].messages.find(message => message.role === "assistant").retrieval.sources[0];
   assert.equal(firstSource.filename, "refund.md"); assert.ok(firstSource.text.includes("_74291"));
@@ -82,7 +83,7 @@ try {
   await openKnowledge(); await closeSettings(); await waitFor("document.querySelector('.knowledge-bar .skill-update')?.innerText.includes('更新')");
   const beforeUpdate = dialogs; await reply("quasar xenolith 99999", "没有在当前知识库中检索到"); assert.ok(dialogs > beforeUpdate);
   base = renamed.summary;
-  state = JSON.parse(await evaluate("localStorage.getItem('modelport.chat.v1')"));
+  state = await evaluate(desktopChatStateExpression);
   assert.equal(state.conversations.find(conversation => conversation.id === matchedId).messages.find(message => message.role === "assistant").retrieval.base.name, baseName);
   assert.equal(state.conversations[0].messages.filter(message => message.role === "assistant").at(-1).retrieval.sources.length, 0);
   console.log("PASS: new conversations start without knowledge; no-match answers and metadata are deterministic; version changes require confirmation without rewriting historical sources");
@@ -113,7 +114,7 @@ try {
   record = await invoke("get_knowledge_base", { id: baseId }); assert.equal(record.documents.length, 1); assert.equal(record.summary.enabled, false);
   await click(".knowledge-actions button", "删除知识库"); await waitFor("document.querySelector('.knowledge-notice')?.innerText.includes('已删除')");
   await closeSettings(); assert.equal(await evaluate("document.querySelector('#chat-knowledge').value"), "");
-  state = JSON.parse(await evaluate("localStorage.getItem('modelport.chat.v1')"));
+  state = await evaluate(desktopChatStateExpression);
   assert.ok(state.conversations.find(conversation => conversation.id === matchedId).messages.find(message => message.role === "assistant").retrieval.sources[0].text.includes("_74291"));
   for (let index = 0; index < fixturePaths.length; index++) assert.equal(readFileSync(fixturePaths[index], "utf8"), fixtureContents[index]);
   assert.deepEqual(errors, []);
@@ -124,7 +125,7 @@ try {
 } finally {
   acceptDialog = true;
   if (baseId) { const current = (await invoke("list_knowledge_bases")).find(base => base.id === baseId); if (current) await invoke("remove_knowledge_base", { base: ref(current) }); }
-  if (originalState !== undefined) { await evaluate(originalState === null ? "localStorage.removeItem('modelport.chat.v1')" : `localStorage.setItem('modelport.chat.v1', ${JSON.stringify(originalState)})`); await reload(); }
+  if (originalState !== undefined) { await evaluate(restoreChatStorageExpression(originalState)); await reload(); }
   if (baseline) assert.deepEqual(await invoke("list_knowledge_bases"), baseline, "Existing knowledge bases must not change");
   close();
 }

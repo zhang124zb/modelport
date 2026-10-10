@@ -81,9 +81,9 @@ npm ci
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-portable.ps1
 ```
 
-脚本会把程序、启动文件和许可证声明放到 `release/`。若已有不同的程序，脚本会停止。明确确认更新时添加 `-ReplaceExisting`，旧程序会保留在 `release/archive/`。如果新旧程序文件相同，不替换程序，但仍刷新附带的启动文件和许可证。
+脚本会把程序、启动文件、使用说明和许可放到 `release/`，自动生成 `ModelPort-<版本>-windows-x64.zip`。若已有不同程序或同名 ZIP，脚本会停止。明确确认更新时添加 `-ReplaceExisting`，旧文件保留到 `release/archive/`。如果程序相同，不替换 EXE，但仍刷新说明和许可。
 
-推荐从 `release/` 中选取以下文件打包成发布附件，保留平铺目录和第三方许可子目录；启动文件可直接找到同目录程序。不要直接压缩整个 `release/`，其中可能包含旧版归档、调试截图和验证产物。还应保留其他分发所需的依赖声明。
+使用脚本产生的 ZIP 作为发布附件，保留平铺目录和第三方许可子目录；启动文件可直接找到同目录程序。不要直接压缩整个 `release/`，其中可能含旧版归档、调试截图和验证产物。打包脚本固定只允许以下文件，并逐一核对校验值；额外资料文件或被篡改的 EXE 会被拒绝。
 
 ```text
 ModelPort/
@@ -91,11 +91,16 @@ ModelPort/
 ├─ 启动 ModelPort.cmd
 ├─ LICENSE
 ├─ THIRD_PARTY_NOTICES.md
+├─ PORTABLE_README.txt
+├─ SHA256SUMS.txt
+├─ package-info.json
 └─ licenses/
    ├─ Apache-2.0.txt
    └─ Geist-OFL-1.1.txt
 ```
 
-在发布说明中列出版本、对应源码提交、Windows / WebView2 要求、变更、安全限制和文件 SHA-256。可用 `Get-FileHash -Algorithm SHA256 -LiteralPath .\release\ModelPort.exe` 计算校验值；校验值不等于签名或可信发布者证明。当前未配置自动 Release、代码签名或签名安装包。
+构建后运行 `npm run test:desktop` 验证实际程序，再运行 `pwsh -NoProfile -File scripts/verify-portable-package.ps1 -PackagePath release/ModelPort-<版本>-windows-x64.zip` 检查发布包。`npm run package:portable -- -ReplaceExisting` 可重新打包已构建程序，但不会重编译；修改源码后必须先做完整 Tauri 发布构建，不可只打包同版本旧 EXE。
+
+在发布说明中列出版本、对应源码提交、Windows / WebView2 要求、变更、安全限制和 ZIP / EXE 的 SHA-256。`package-info.json` 记录基础提交及是否存在未提交修改；正式 GitHub 发布前应先提交对应源码并重建干净版本，不能把基础提交当成未提交修改的完整源码来源。可用 `Get-FileHash -Algorithm SHA256 -LiteralPath .\release\ModelPort.exe` 计算校验值；校验值不等于签名或可信发布者证明。当前未配置自动 Release、代码签名或签名安装包，生成本机 ZIP 不会自动上传 GitHub。
 
 首次发布前仍需完成第三方依赖和字体的分发许可核对；现有声明只覆盖明确记录的直接复制组件，不声称完整许可证审计已经完成。不要将 API Key、测试用户数据、调试日志和个人聊天截图打进发布包。

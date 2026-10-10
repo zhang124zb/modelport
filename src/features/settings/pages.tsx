@@ -33,6 +33,8 @@ export type SettingsPageProps = SkillSettingsProps & KnowledgeSettingsProps & Mc
   onSaveModelDefaults: (settings: ModelDefaults) => void;
   chatData: readonly Conversation[];
   chatBusy: boolean;
+  chatStorageError: string;
+  onExportRawChats: () => void;
   onExportChats: () => void;
   onImportChats: (conversations: readonly Conversation[]) => void;
   onClearChats: () => void;

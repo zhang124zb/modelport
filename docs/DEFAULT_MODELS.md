@@ -22,7 +22,7 @@
 - `src/lib/model-defaults.ts`：类型、校验、存储与默认引用解析。
 - `src/features/settings/DefaultsSettingsPage.tsx`：选择表单、未配置密钥 / 当前列表缺失提示、保存和公共退出保护。
 - `SettingsPageProps`：`modelDefaults`、`modelDefaultsError`、`onSaveModelDefaults`，沿用现有 `modelChoices` 与凭据状态。
-- `src/App.tsx`：`pickDefaultModel` 统一空白默认选择；实际模型调用、历史模型保存及原生安全凭据流程不改变。本机连接测试仅在尚未选择本机模型的占位状态填入发现结果，不改掉当前明确选择。
+- `src/App.tsx`：`pickDefaultModel` 统一空白默认选择；实际模型调用、历史模型保存及原生安全凭据流程不改变。`features/connections/useModelConnections.ts` 的本机连接测试仅在尚未选择本机模型的占位状态填入发现结果，不改掉当前明确选择。
 
 ## 验证
 

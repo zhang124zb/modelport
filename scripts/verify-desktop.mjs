@@ -1,3 +1,4 @@
+import { desktopChatStateExpression, chatStorageRawExpression, legacyChatSeedExpression, restoreChatStorageExpression } from "./chat-storage-fixture.mjs";
 // Run against a ModelPort WebView with a fresh, isolated user-data folder.
 // Example: node scripts/verify-desktop.mjs 9342 [modal.png] [settings.png]
 import assert from "node:assert/strict";
@@ -10,8 +11,8 @@ const { command, evaluate, waitFor, reload, close } = await connectDesktop(port)
 let originalState;
 try {
   await waitFor("Boolean(document.querySelector('.model-trigger'))");
-  originalState = await evaluate("localStorage.getItem('modelport.chat.v1')");
-  assert.equal(JSON.parse(originalState ?? "{}").conversations?.length ?? 0, 0,
+  originalState = await evaluate(chatStorageRawExpression);
+  assert.equal((await evaluate(desktopChatStateExpression)).conversations?.length ?? 0, 0,
     "Use an isolated WebView profile; verification must not modify real conversations");
   const { models } = await (await fetch("http://127.0.0.1:11434/api/tags")).json();
   assert.ok(models.length, "Install an Ollama model before running this check");
@@ -34,7 +35,7 @@ try {
     return { brandCovered: covered('.brand-mark'), controlsCovered: covered('.window-actions'),
       blur: getComputedStyle(document.querySelector('.modal-backdrop')).backdropFilter,
       provider: document.querySelector('.provider-card.selected strong').textContent,
-      keyField: Boolean(document.querySelector('.key-field')) };
+      keyField: Boolean(document.querySelector('input[aria-label="API 密钥"]')) };
   })()`);
   assert.ok(modal.brandCovered && modal.controlsCovered && modal.blur.includes("blur"), JSON.stringify(modal));
   assert.equal(modal.provider, "Ollama");
@@ -95,15 +96,14 @@ try {
     model: { id: "deepseek-flash", name: "DeepSeek Flash", provider: "deepseek", tone: "#5368ff", label: "D" },
     messages: [{ id: "verification-message", role: "user", content: "Saved history check" }],
   }] };
-  await evaluate(`localStorage.setItem('modelport.chat.v1', ${JSON.stringify(JSON.stringify(history))})`);
+  await evaluate(legacyChatSeedExpression(JSON.stringify(history)));
   await reload();
   await waitFor("document.querySelector('.model-trigger')?.innerText.includes('DeepSeek Flash')");
-  assert.equal(await evaluate("JSON.parse(localStorage.getItem('modelport.chat.v1')).conversations[0].model.provider"), "deepseek");
+  assert.equal(await evaluate(`${desktopChatStateExpression}.conversations[0].model.provider`), "deepseek");
   console.log("PASS: a saved conversation retains its cloud model");
 } finally {
   if (originalState !== undefined) {
-    await evaluate(originalState === null ? "localStorage.removeItem('modelport.chat.v1')"
-      : `localStorage.setItem('modelport.chat.v1', ${JSON.stringify(originalState)})`);
+    await evaluate(restoreChatStorageExpression(originalState));
     await reload();
   }
   close();

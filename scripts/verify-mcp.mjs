@@ -1,3 +1,4 @@
+import { desktopChatStateExpression, chatStorageRawExpression, restoreChatStorageExpression } from "./chat-storage-fixture.mjs";
 // Fresh isolated WebView only. Local HTTP MCP/model fixtures; no cloud/Ollama calls or credentials.
 // node scripts/verify-mcp.mjs <CDP-port> [settings.png] [approval.png]
 import assert from "node:assert/strict";
@@ -52,13 +53,13 @@ try {
   on("Page.javascriptDialogOpening", ({ message }) => { confirmTexts.push(message); void command("Page.handleJavaScriptDialog", { accept: acceptDialog }); });
   on("Runtime.exceptionThrown", ({ exceptionDetails }) => exceptions.push(exceptionDetails.text));
   await command("Page.enable"); await command("Runtime.enable");
-  originals = await Promise.all(keys.map(key => evaluate(`localStorage.getItem(${JSON.stringify(key)})`)));
-  assert.equal(JSON.parse(originals[0] ?? "{}").conversations?.length ?? 0, 0, "Use a fresh isolated WebView, never real chats"); verified = true;
+  originals = await Promise.all(keys.map(key => evaluate(key === "modelport.chat.v1" ? chatStorageRawExpression : `localStorage.getItem(${JSON.stringify(key)})`)));
+  assert.equal((await evaluate(desktopChatStateExpression)).conversations?.length ?? 0, 0, "Use a fresh isolated WebView, never real chats"); verified = true;
   const invoke = (name, args = {}) => evaluate(`window.__TAURI_INTERNALS__.invoke(${JSON.stringify(name)}, ${JSON.stringify(args)})`);
   const invokeError = (name, args = {}) => evaluate(`window.__TAURI_INTERNALS__.invoke(${JSON.stringify(name)}, ${JSON.stringify(args)}).then(() => '', String)`);
   const fill = async (selector, text) => { await evaluate(`{ const el = document.querySelector(${JSON.stringify(selector)}); el.focus(); el.select(); }`); await command("Input.insertText", { text }); };
   const clickText = (selector, text) => evaluate(`[...document.querySelectorAll(${JSON.stringify(selector)})].find(button => button.innerText.includes(${JSON.stringify(text)})).click()`);
-  const stored = () => evaluate("JSON.parse(localStorage.getItem('modelport.chat.v1') ?? '{}')");
+  const stored = () => evaluate(desktopChatStateExpression);
   const currentServer = async () => (await invoke("list_mcp_servers")).find(entry => entry.name === fixtureName);
   const closeSettings = async () => { await evaluate("document.querySelector('[aria-label=\"关闭设置\"]').click()"); await waitFor("!document.querySelector('.settings-dialog')"); };
   const send = async text => { await fill(".composer textarea", text); await evaluate("document.querySelector('[aria-label=\"发送消息\"]').click()"); };
@@ -176,7 +177,7 @@ try {
     }
     for (const id of ownProviders) await client.evaluate(`window.__TAURI_INTERNALS__.invoke('remove_custom_provider',{provider:${JSON.stringify(id)}})`).catch(error => console.error(`Fixture provider cleanup failed: ${String(error)}`));
     if (verified) {
-      for (const [index, key] of keys.entries()) await client.evaluate(originals[index] === null ? `localStorage.removeItem(${JSON.stringify(key)})` : `localStorage.setItem(${JSON.stringify(key)},${JSON.stringify(originals[index])})`).catch(() => {});
+      for (const [index, key] of keys.entries()) await client.evaluate(key === "modelport.chat.v1" ? restoreChatStorageExpression(originals[index]) : originals[index] === null ? `localStorage.removeItem(${JSON.stringify(key)})` : `localStorage.setItem(${JSON.stringify(key)},${JSON.stringify(originals[index])})`).catch(() => {});
       await client.command("Emulation.clearDeviceMetricsOverride").catch(() => {}); await client.reload().catch(() => {});
     }
     client.close();

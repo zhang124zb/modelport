@@ -1,3 +1,4 @@
+import { desktopChatStateExpression } from "./chat-storage-fixture.mjs";
 // Use a fresh isolated WebView profile. No skill, knowledge, or model data is written.
 // Example: node scripts/verify-composer-layout.mjs 9350 [wide.png] [compact.png]
 import assert from "node:assert/strict";
@@ -40,7 +41,7 @@ async function checkLayout(width, height, screenshot) {
 }
 try {
   await waitFor("Boolean(document.querySelector('.composer-context')) && [...document.querySelectorAll('.composer-context select')].every(select => !select.disabled)");
-  assert.equal(await evaluate("JSON.parse(localStorage.getItem('modelport.chat.v1') ?? '{}').conversations?.length ?? 0"), 0,
+  assert.equal(await evaluate(`${desktopChatStateExpression}.conversations?.length ?? 0`), 0,
     "Use a fresh isolated profile, not real chats");
   isolated = true;
   for (const [id, label, manager, section] of [

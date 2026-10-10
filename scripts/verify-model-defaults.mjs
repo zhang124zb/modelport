@@ -1,3 +1,4 @@
+import { desktopChatStateExpression, chatStorageRawExpression, legacyChatSeedExpression, restoreChatStorageExpression } from "./chat-storage-fixture.mjs";
 // Fresh isolated desktop WebView only. Saves preferences and calls real Ollama, never cloud models or credentials writes.
 // node scripts/verify-model-defaults.mjs 9350 [defaults.png]
 import assert from "node:assert/strict";
@@ -10,9 +11,9 @@ const exceptions = [];
 on("Page.javascriptDialogOpening", () => { dialogs++; void command("Page.handleJavaScriptDialog", { accept: acceptDialog, promptText }); });
 on("Runtime.exceptionThrown", ({ exceptionDetails }) => exceptions.push(exceptionDetails.text));
 await command("Page.enable"); await command("Runtime.enable");
-const stored = key => evaluate(`localStorage.getItem(${JSON.stringify(key)})`);
+const stored = key => evaluate(key === "modelport.chat.v1" ? chatStorageRawExpression : `localStorage.getItem(${JSON.stringify(key)})`);
 const defaultValue = async () => JSON.parse(await stored(modelKey));
-const chat = async () => JSON.parse(await stored(chatKey) ?? "{}");
+const chat = async () => await evaluate(desktopChatStateExpression);
 const modelLabel = () => evaluate("document.querySelector('.model-trigger').innerText");
 async function select(id, value) { await evaluate(`{ const el = document.getElementById('${id}'); el.value = ${JSON.stringify(value)}; el.dispatchEvent(new Event('change', { bubbles: true })); }`); }
 async function fill(text) { await evaluate("{ const el = document.querySelector('.composer textarea'); el.focus(); el.select(); }"); await command("Input.insertText", { text }); }
@@ -21,7 +22,7 @@ async function settings() { await evaluate("document.querySelector('.utility-nav
 async function closeSettings() { await evaluate("document.querySelector('[aria-label=\"关闭设置\"]').click()"); await waitFor("!document.querySelector('.settings-dialog')"); }
 async function save() { await evaluate("document.querySelector('.defaults-settings-save').click()"); await waitFor("document.querySelector('.defaults-settings-save').disabled && document.querySelector('.chat-settings-notice')?.innerText.includes('默认模型已保存')"); }
 async function key(key, code, windowsVirtualKeyCode, modifiers = 0) { for (const type of ["keyDown", "keyUp"]) await command("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode, modifiers }); }
-async function newChat() { await key("n", "KeyN", 78, 2); await waitFor("JSON.parse(localStorage.getItem('modelport.chat.v1')).activeConversationId === null"); }
+async function newChat() { await key("n", "KeyN", 78, 2); await waitFor(`${desktopChatStateExpression}.activeConversationId === null`); }
 async function trackRequests() {
   await command("Debugger.disable"); await command("Debugger.enable"); await evaluate("window.__defaultRequests = []");
   const { result } = await command("Runtime.evaluate", { expression: "window.__TAURI_INTERNALS__.invoke" });
@@ -57,7 +58,7 @@ try {
   console.log("PASS: selectable cloud defaults, explicit save/failed-save/exit guards, new chats and restart retain the choice, connection tests do not switch it");
 
   const history = { activeConversationId: "default-history", conversations: [{ id: "default-history", title: "历史模型保持不变", date: "10/08", model: { provider: "deepseek", id: "deepseek-flash", name: "DeepSeek Flash", tone: "#5368ff", label: "D" }, messages: [{ id: "history-user", role: "user", content: "历史用户记录", savedOnly: true }] }] };
-  await evaluate(`localStorage.setItem('${chatKey}', ${JSON.stringify(JSON.stringify(history))})`); await reload(); assert.ok((await modelLabel()).includes("DeepSeek Flash"));
+  await evaluate(legacyChatSeedExpression(JSON.stringify(history))); await reload(); assert.ok((await modelLabel()).includes("DeepSeek Flash"));
   const historyBefore = await stored(chatKey); await settings(); await select("default-chat-model", `ollama:${chosenLocal}`); await save(); assert.equal(await stored(chatKey), historyBefore); assert.ok((await modelLabel()).includes("DeepSeek Flash")); await closeSettings();
   await newChat(); assert.ok((await modelLabel()).includes(chosenLocal)); await reload(); assert.ok((await modelLabel()).includes(chosenLocal));
   await settings(); await section("常规设置"); await select("general-startup", "new-chat"); await evaluate("document.querySelector('.general-settings-save').click()"); await closeSettings();
@@ -102,7 +103,7 @@ finally {
   if (verified) {
     await command("Debugger.disable"); await evaluate("if (window.__defaultsSetItem) Storage.prototype.setItem = window.__defaultsSetItem");
     await evaluate("document.querySelector('[aria-label=\"停止生成\"]')?.click()"); await waitFor("!document.querySelector('[aria-label=\"停止生成\"]')", 300);
-    for (const [index, key] of [modelKey, chatKey, generalKey, chatPreferencesKey].entries()) await evaluate(originals[index] === null ? `localStorage.removeItem('${key}')` : `localStorage.setItem('${key}', ${JSON.stringify(originals[index])})`);
+    for (const [index, key] of [modelKey, chatKey, generalKey, chatPreferencesKey].entries()) await evaluate(key === chatKey ? restoreChatStorageExpression(originals[index]) : originals[index] === null ? `localStorage.removeItem('${key}')` : `localStorage.setItem('${key}', ${JSON.stringify(originals[index])})`);
     await command("Emulation.clearDeviceMetricsOverride"); await reload();
   }
   close();

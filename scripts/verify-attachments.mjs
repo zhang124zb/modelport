@@ -1,3 +1,4 @@
+import { desktopChatStateExpression, chatStorageRawExpression, restoreChatStorageExpression } from "./chat-storage-fixture.mjs";
 // Fresh isolated WebView only. Controlled localhost Ollama fixture, never a cloud request or real user history.
 // Stop Ollama before running this fixture; it refuses to occupy an in-use port.
 // node scripts/verify-attachments.mjs 9370 [screenshot.png]
@@ -31,9 +32,9 @@ try {
   on("Page.javascriptDialogOpening", () => void command("Page.handleJavaScriptDialog", { accept: true }));
   on("Runtime.exceptionThrown", ({ exceptionDetails }) => exceptions.push(exceptionDetails.text));
   await command("Page.enable"); await command("Runtime.enable");
-  originals = await Promise.all(keys.map(key => evaluate(`localStorage.getItem(${JSON.stringify(key)})`)));
-  assert.equal(JSON.parse(originals[0] ?? "{}").conversations?.length ?? 0, 0, "Use a fresh isolated WebView, never real chats"); verified = true;
-  const chat = () => evaluate("JSON.parse(localStorage.getItem('modelport.chat.v1') ?? '{}')");
+  originals = await Promise.all(keys.map(key => evaluate(key === "modelport.chat.v1" ? chatStorageRawExpression : `localStorage.getItem(${JSON.stringify(key)})`)));
+  assert.equal((await evaluate(desktopChatStateExpression)).conversations?.length ?? 0, 0, "Use a fresh isolated WebView, never real chats"); verified = true;
+  const chat = () => evaluate(desktopChatStateExpression);
   const draftCount = () => evaluate("document.querySelectorAll('[aria-label=\"待发送附件\"] .attachment-card').length");
   const notice = async pattern => { await waitFor("Boolean(document.querySelector('.attachment-dialog:modal'))"); assert.match(await evaluate("document.querySelector('.attachment-dialog').innerText"), pattern); };
   const closeNotice = async () => { await evaluate("document.querySelector('.attachment-confirm').click()"); await waitFor("!document.querySelector('.attachment-dialog')"); };
@@ -115,7 +116,7 @@ try {
     await client.evaluate("document.querySelector('.attachment-confirm')?.click(); document.querySelector('[aria-label=\"停止生成\"]')?.click()");
     await client.waitFor("!document.querySelector('[aria-label=\"停止生成\"]')");
     if (ownIds.size) await client.evaluate(`window.__TAURI_INTERNALS__.invoke('remove_chat_attachments', { ids: ${JSON.stringify([...ownIds])} })`);
-    for (const [index, key] of keys.entries()) await client.evaluate(originals[index] === null ? `localStorage.removeItem(${JSON.stringify(key)})` : `localStorage.setItem(${JSON.stringify(key)}, ${JSON.stringify(originals[index])})`);
+    for (const [index, key] of keys.entries()) await client.evaluate(key === "modelport.chat.v1" ? restoreChatStorageExpression(originals[index]) : originals[index] === null ? `localStorage.removeItem(${JSON.stringify(key)})` : `localStorage.setItem(${JSON.stringify(key)}, ${JSON.stringify(originals[index])})`);
     await client.command("Emulation.clearDeviceMetricsOverride"); await client.reload();
   }
   client?.close(); server.closeIdleConnections(); await new Promise(resolve => server.close(resolve));

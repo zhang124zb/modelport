@@ -24,7 +24,7 @@
 - `src/lib/chat-settings.ts`：配置类型、校验、版本化存储、快捷键判定及完整问答裁剪。
 - `src/features/settings/ChatSettingsPage.tsx`：草稿、保存、恢复默认和公共退出保护。
 - `SettingsPageProps`：`chatSettings`、`chatSettingsError`、`onSaveChatSettings`。
-- `src/App.tsx`：已保存配置、输入操作、展示更新及本次请求快照。
+- `src/App.tsx`：已保存配置、输入操作及本次请求快照；`features/chat/useChatLifecycle.ts` 处理生成状态，`ConversationMessages.tsx` 根据已保存配置渲染分页消息。
 - `src/lib/modelport.ts`：普通 / 流式聊天末尾增加可选 `systemPrompt`，兼容原调用。
 - `src-tauri/src/connection.rs`：`send_chat` / `stream_chat` 接受可选 `system_prompt`，共同校验长度和控制字符；历史仍仅接受 user / assistant 角色。
 

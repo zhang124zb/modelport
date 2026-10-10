@@ -1,6 +1,6 @@
 [package]
 name = "modelport"
-version = "0.11.0"
+version = "0.12.0"
 description = "A local-first multi-model AI desktop client"
 license = "MIT"
 authors = ["ModelPort contributors"]
@@ -35,6 +35,15 @@ base64 = "0.22"
 png = "0.17"
 jsonschema = { version = "0.58.6", default-features = false }
 
+
+# Development keeps checks enabled but avoids large symbols/incremental caches.
+[profile.dev]
+debug = 0
+incremental = false
+
+[profile.test]
+debug = 0
+incremental = false
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

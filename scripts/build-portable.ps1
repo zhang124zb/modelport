@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $releaseDir = Join-Path $projectRoot 'release'
 $outputExe = Join-Path $releaseDir 'ModelPort.exe'
-$packageFiles = @('LICENSE', 'THIRD_PARTY_NOTICES.md', 'licenses\Apache-2.0.txt', 'licenses\Geist-OFL-1.1.txt', '启动 ModelPort.cmd')
+$packageFiles = @('LICENSE', 'THIRD_PARTY_NOTICES.md', 'licenses\Apache-2.0.txt', 'licenses\Geist-OFL-1.1.txt', '启动 ModelPort.cmd', 'PORTABLE_README.txt')
 foreach ($relativePath in $packageFiles) {
     if (-not (Test-Path -LiteralPath (Join-Path $projectRoot $relativePath) -PathType Leaf)) {
         throw "缺少发布所需文件：$relativePath"
@@ -88,6 +88,7 @@ if (Test-Path -LiteralPath $outputExe -PathType Leaf) {
     if ($builtHash -eq $outputHash) {
         Copy-PortableNotices
         Write-Host "程序已是当前构建版本：$outputExe"
+        & (Join-Path $PSScriptRoot 'package-portable.ps1') -ReplaceExisting:$ReplaceExisting
         exit 0
     }
     if (-not $ReplaceExisting) {
@@ -129,3 +130,4 @@ Copy-PortableNotices
 if ($backupPath) {
     Write-Host "旧版已归档：$backupPath"
 }
+& (Join-Path $PSScriptRoot 'package-portable.ps1') -ReplaceExisting:$ReplaceExisting

@@ -1,3 +1,4 @@
+import { desktopChatStateExpression, chatStorageRawExpression, restoreChatStorageExpression } from "./chat-storage-fixture.mjs";
 // Real local Ollama only, isolated empty WebView; never writes API keys or downloads models.
 // node scripts/verify-attachments-live.mjs <port> [screenshot.png]
 import assert from "node:assert/strict";
@@ -8,8 +9,8 @@ const key = "modelport.chat.v1"; let original, verified = false; const ownIds = 
 on("Page.javascriptDialogOpening", () => void command("Page.handleJavaScriptDialog", { accept: true }));
 await command("Page.enable");
 try {
-  original = await evaluate(`localStorage.getItem('${key}')`);
-  assert.equal(JSON.parse(original ?? "{}").conversations?.length ?? 0, 0, "Use an empty isolated test WebView"); verified = true;
+  original = await evaluate(chatStorageRawExpression);
+  assert.equal((await evaluate(desktopChatStateExpression)).conversations?.length ?? 0, 0, "Use an empty isolated test WebView"); verified = true;
   const models = await evaluate("window.__TAURI_INTERNALS__.invoke('list_available_models', { provider: 'ollama' })");
   let chosen;
   for (const model of models) {
@@ -42,7 +43,7 @@ try {
     await evaluate("document.querySelector('.attachment-confirm')?.click(); document.querySelector('[aria-label=\"停止生成\"]')?.click()");
     await waitFor("!document.querySelector('[aria-label=\"停止生成\"]')", 900);
     if (ownIds.size) await evaluate(`window.__TAURI_INTERNALS__.invoke('remove_chat_attachments', { ids: ${JSON.stringify([...ownIds])} })`);
-    await evaluate(original === null ? `localStorage.removeItem('${key}')` : `localStorage.setItem('${key}', ${JSON.stringify(original)})`); await reload();
+    await evaluate(key === "modelport.chat.v1" ? restoreChatStorageExpression(original) : original === null ? `localStorage.removeItem('${key}')` : `localStorage.setItem('${key}', ${JSON.stringify(original)})`); await reload();
   }
   close();
 }

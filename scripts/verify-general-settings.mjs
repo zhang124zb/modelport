@@ -1,3 +1,4 @@
+import { desktopChatStateExpression, chatStorageRawExpression, legacyChatSeedExpression, restoreChatStorageExpression } from "./chat-storage-fixture.mjs";
 // Fresh isolated desktop WebView only; no cloud calls or native library writes.
 // node scripts/verify-general-settings.mjs 9350 [general-dark.png] [chat-dark.png]
 import assert from "node:assert/strict";
@@ -11,8 +12,8 @@ const exceptions = [];
 on("Page.javascriptDialogOpening", () => { dialogs++; void command("Page.handleJavaScriptDialog", { accept: acceptDialog, promptText }); });
 on("Runtime.exceptionThrown", ({ exceptionDetails }) => exceptions.push(exceptionDetails.text));
 await command("Page.enable"); await command("Runtime.enable");
-const stored = key => evaluate(`localStorage.getItem(${JSON.stringify(key)})`);
-const chats = async () => JSON.parse(await stored(chatKey) ?? "{}");
+const stored = key => evaluate(key === "modelport.chat.v1" ? chatStorageRawExpression : `localStorage.getItem(${JSON.stringify(key)})`);
+const chats = async () => await evaluate(desktopChatStateExpression);
 async function fill(selector, text) { await evaluate(`{ const el = document.querySelector(${JSON.stringify(selector)}); el.focus(); el.select(); }`); await command("Input.insertText", { text }); }
 async function select(id, value) { await evaluate(`{ const el = document.getElementById('${id}'); el.value = ${JSON.stringify(value)}; el.dispatchEvent(new Event('change', { bubbles: true })); }`); }
 async function section(label) { await evaluate(`[...document.querySelectorAll('.settings-nav button')].find(button => button.innerText === ${JSON.stringify(label)}).click()`); await waitFor(`document.querySelector('#settings-page-title').innerText === ${JSON.stringify(label)}`); }
@@ -22,7 +23,7 @@ async function save() { await evaluate("document.querySelector('.general-setting
 async function key(key, code, windowsVirtualKeyCode) { for (const type of ["keyDown", "keyUp"]) await command("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode }); }
 async function button(label) { await evaluate(`[...document.querySelectorAll('.general-data-actions button')].find(button => button.innerText === ${JSON.stringify(label)}).click()`); }
 async function upload(file) { const { root } = await command("DOM.getDocument"); const { nodeId } = await command("DOM.querySelector", { nodeId: root.nodeId, selector: 'input[aria-label="选择聊天备份"]' }); await command("DOM.setFileInputFiles", { nodeId, files: [file] }); }
-async function quota(key) { await evaluate(`{ window.__generalSetItem = Storage.prototype.setItem; Storage.prototype.setItem = function(key, value) { if (key === ${JSON.stringify(key)}) throw new Error('quota'); return window.__generalSetItem.call(this, key, value); }; }`); }
+async function quota(key) { await evaluate(`{ window.__generalSetItem = Storage.prototype.setItem; Storage.prototype.setItem = function(key, value) { if (key === ${JSON.stringify(key)} || (${JSON.stringify(key)} === 'modelport.chat.v1' && key.startsWith('modelport.chat.v2'))) throw new Error('quota'); return window.__generalSetItem.call(this, key, value); }; }`); }
 async function unquota() { await evaluate("Storage.prototype.setItem = window.__generalSetItem"); }
 async function screenshot(path) { if (path) { const { data } = await command("Page.captureScreenshot", { format: "png" }); writeFileSync(path, Buffer.from(data, "base64")); } }
 try {
@@ -47,7 +48,7 @@ try {
   const seed = { activeConversationId: "general-chat", conversations: [{ id: "general-chat", title: "常规设置验证", date: "10/07", model,
     messages: [{ id: "general-user", role: "user", content: "本机聊天内容" }, { id: "general-assistant", role: "assistant", content: "# 深色聊天\n\n**Markdown 保留**\n\n```js\nconst answer = 42;\n```" }] },
     { id: "general-note", title: "仅保存的记录", date: "10/07", model, newTopicPending: true, messages: [{ id: "general-note-msg", role: "user", content: "备份笔记", savedOnly: true, topicStart: true }] }] };
-  await evaluate(`localStorage.setItem('${chatKey}', ${JSON.stringify(JSON.stringify(seed))})`); await reload();
+  await evaluate(legacyChatSeedExpression(JSON.stringify(seed))); await reload();
   await waitFor("document.querySelector('.app-shell').classList.contains('sidebar-collapsed') && document.documentElement.classList.contains('dark')");
   assert.equal((await chats()).activeConversationId, null); assert.equal((await chats()).conversations.length, 2);
   assert.ok(await evaluate("document.querySelector('.model-trigger').innerText.includes('Ollama') || !document.querySelector('.model-trigger').innerText.includes('DeepSeek')"));
@@ -84,7 +85,7 @@ try {
   acceptDialog = false; const before = dialogs; await evaluate("document.querySelector('[aria-label=\"关闭设置\"]').click()"); assert.ok(dialogs > before && await evaluate("Boolean(document.querySelector('.general-import-preview'))"));
   await button("确认合并导入"); assert.equal(await stored(chatKey), beforeImport);
   acceptDialog = true; await quota(chatKey); await button("确认合并导入"); await waitFor("document.querySelector('.chat-settings-notice').innerText.includes('尚未改变')"); assert.equal(await stored(chatKey), beforeImport); await unquota();
-  await button("确认合并导入"); await waitFor("!document.querySelector('.general-import-preview') && JSON.parse(localStorage.getItem('modelport.chat.v1')).conversations.length === 4");
+  await button("确认合并导入"); await waitFor(`!document.querySelector('.general-import-preview') && ${desktopChatStateExpression}.conversations.length === 4`);
   const imported = await chats(); assert.equal(imported.activeConversationId, "general-chat"); assert.equal(new Set(imported.conversations.map(chat => chat.id)).size, 4);
   assert.ok(imported.conversations.some(chat => chat.newTopicPending && chat.messages[0].savedOnly && chat.messages[0].topicStart));
   assert.equal(await evaluate("document.querySelector('.composer textarea').value"), "导入必须保留的草稿");
@@ -92,7 +93,7 @@ try {
   acceptDialog = false; await button("清空聊天记录"); assert.equal(await stored(chatKey), beforeClear);
   acceptDialog = true; promptText = "wrong"; await button("清空聊天记录"); assert.equal(await stored(chatKey), beforeClear);
   promptText = "清空对话"; await quota(chatKey); await button("清空聊天记录"); assert.equal(await stored(chatKey), beforeClear); await unquota();
-  await button("清空聊天记录"); await waitFor("JSON.parse(localStorage.getItem('modelport.chat.v1')).conversations.length === 0");
+  await button("清空聊天记录"); await waitFor(`${desktopChatStateExpression}.conversations.length === 0`);
   assert.equal(await stored(generalKey), generalBeforeClear); assert.equal(await stored(preferencesKey), originalPreferences); assert.equal(await evaluate("document.querySelector('.composer textarea').value"), "");
   await upload(backupFile); await waitFor("Boolean(document.querySelector('.general-import-preview'))"); await button("确认合并导入"); assert.equal((await chats()).conversations.length, 2);
   assert.deepEqual(await evaluate("Promise.all([window.__TAURI_INTERNALS__.invoke('list_skills'), window.__TAURI_INTERNALS__.invoke('list_knowledge_bases')])"), libraryBefore);
@@ -114,7 +115,7 @@ finally {
   if (verified) {
     await evaluate("if (window.__generalSetItem) Storage.prototype.setItem = window.__generalSetItem");
     await evaluate("document.querySelector('[aria-label=\"停止生成\"]')?.click()"); await waitFor("!document.querySelector('[aria-label=\"停止生成\"]')", 300);
-    for (const [key, original] of [[generalKey, originalGeneral], [chatKey, originalChat], [preferencesKey, originalPreferences]]) await evaluate(original === null ? `localStorage.removeItem('${key}')` : `localStorage.setItem('${key}', ${JSON.stringify(original)})`);
+    for (const [key, original] of [[generalKey, originalGeneral], [chatKey, originalChat], [preferencesKey, originalPreferences]]) await evaluate(key === "modelport.chat.v1" ? restoreChatStorageExpression(original) : original === null ? `localStorage.removeItem('${key}')` : `localStorage.setItem('${key}', ${JSON.stringify(original)})`);
     await command("Emulation.clearDeviceMetricsOverride"); await command("Emulation.setEmulatedMedia", { features: [] }); await reload();
   }
   close();
